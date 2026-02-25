@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { appealsApi } from "../../api/appealsApi";
-import type { AppealListItem } from "../../types/appeal";
+import type { AppealListItem, SortOrder } from "../../types/appeal";
 import "./AppealsList.scss";
 
 function AppealsList() {
   const [appeals, setAppeals] = useState<AppealListItem[]>([]);
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("default");
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,18 +30,42 @@ function AppealsList() {
     fetchAppeals();
   }, []);
 
-  const filteredAppeals = useMemo(() => {
+  const filteredAndSortedAppeals = useMemo(() => {
+    let result = [...appeals];
+
     const normalized = search.trim().toLowerCase();
-    if (!normalized) {
-      return appeals;
+    if (normalized) {
+      result = result.filter(
+        (appeal) =>
+          appeal.title.toLowerCase().includes(normalized) ||
+          String(appeal.id).includes(normalized)
+      );
     }
 
-    return appeals.filter(
-      (appeal) =>
-        appeal.title.toLowerCase().includes(normalized) ||
-        String(appeal.id).includes(normalized),
-    );
-  }, [appeals, search]);
+    if (sortOrder !== "default") {
+      result.sort((a, b) => {
+        const parseDate = (dateStr: string) => {
+          const [day, month, year] = dateStr.split(".").map(Number);
+          return new Date(year, month - 1, day).getTime();
+        };
+
+        const dateA = parseDate(a.date);
+        const dateB = parseDate(b.date);
+
+        return sortOrder === "desc" ? dateB - dateA : dateA - dateB;
+      });
+    }
+
+    return result;
+  }, [appeals, search, sortOrder]);
+
+  const toggleSort = () => {
+    setSortOrder((prev) => {
+      if (prev === "default") return "desc";
+      if (prev === "desc") return "asc";
+      return "default";
+    });
+  };
 
   return (
     <section className="appeals-list-page">
@@ -57,32 +83,37 @@ function AppealsList() {
           placeholder="Найти по названию или ID..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          aria-label="Поиск обращений"
         />
       </div>
 
-      {isLoading && <p className="appeals-list-page__state">Загрузка обращений...</p>}
-      {error && <p className="appeals-list-page__state appeals-list-page__state--error">{error}</p>}
-
       {!isLoading && !error && (
-        <ul className="appeals-list">
-          {filteredAppeals.length === 0 && (
-            <li className="appeals-list__empty">По вашему запросу ничего не найдено.</li>
-          )}
+        <div className="appeals-table">
+          <div className="appeals-table__header">
+            <span className="col-title">Номер</span>
+            <span className="col-title">Обращение</span>
+            <span className="col-date sortable" onClick={toggleSort} role="button">
+              Дата обращения {sortOrder === "desc" ? "↓" : sortOrder === "asc" ? "↑" : ""}
+            </span>
+          </div>
 
-          {filteredAppeals.map((appeal, index) => (
-            <li
-              className="appeals-list__item"
-              key={appeal.id}
-              style={{ animationDelay: `${index * 0.04}s` }}
-            >
-              <Link to={`/appeals/${appeal.id}`} className="appeals-card">
-                <span className="appeals-card__id">#{appeal.id}</span>
-                <h2 className="appeals-card__title">{appeal.title}</h2>
-              </Link>
-            </li>
-          ))}
-        </ul>
+          <ul className="appeals-list">
+            {filteredAndSortedAppeals.map((appeal, index) => (
+              <li
+                className="appeals-list__item"
+                key={appeal.id}
+                style={{ animationDelay: `${index * 0.03}s` }}
+              >
+                <Link to={`/appeals/${appeal.id}`} className="appeals-card">
+                  <span className="appeals-card__id">#{appeal.id}</span>
+                  <span className="appeals-card__title">{appeal.title}</span>
+                  <span className="appeals-card__date">
+                    {appeal.date}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

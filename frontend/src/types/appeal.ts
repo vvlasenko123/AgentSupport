@@ -1,4 +1,5 @@
 export type EmotionalTone = "Негатив" | "Нейтрально" | "Позитив";
+export type SortOrder = "default" | "asc" | "desc";
 
 export interface AppealsResponse {
   posts: DummyPost[];
@@ -36,6 +37,7 @@ export interface DummyUser {
 export interface AppealListItem {
   id: number;
   title: string;
+  date: string;
 }
 
 export interface AppealDetails {
