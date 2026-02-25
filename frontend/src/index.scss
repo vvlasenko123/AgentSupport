@@ -1,0 +1,57 @@
+:root {
+  --blue-900: #0c3b66;
+  --blue-800: #155184;
+  --blue-700: #236ea9;
+  --blue-600: #2f84c7;
+  --sky-100: #eff8ff;
+  --white: #ffffff;
+
+  font-family:
+    "Segoe UI",
+    "Noto Sans",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--blue-900);
+  background:
+    radial-gradient(circle at 9% 12%, rgba(67, 159, 237, 0.24), transparent 36%),
+    radial-gradient(circle at 90% 86%, rgba(157, 210, 255, 0.3), transparent 34%),
+    linear-gradient(180deg, #f8fcff 0%, #ecf6ff 65%, #f8fcff 100%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

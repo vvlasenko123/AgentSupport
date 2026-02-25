@@ -1,0 +1,25 @@
+.footer {
+  border-top: 1px solid rgba(61, 141, 220, 0.16);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.footer__container {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+  min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+}
+
+.footer__text {
+  margin: 0;
+  color: var(--blue-800);
+  font-size: 0.9rem;
+}
+
+.footer__text--muted {
+  color: var(--blue-600);
+}
