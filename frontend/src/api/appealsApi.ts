@@ -21,6 +21,7 @@ const mapTone = (likes: number, dislikes: number): EmotionalTone => {
 const toListItem = (post: DummyPost): AppealListItem => ({
   id: post.id,
   title: post.title,
+  date: formatDateByAppealId(post.id),
 });
 
 const formatDateByAppealId = (id: number): string => {

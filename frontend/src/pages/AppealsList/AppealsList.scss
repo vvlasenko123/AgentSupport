@@ -1,3 +1,5 @@
+$table-grid: 100px 1fr 150px;
+
 .appeals-list-page {
   animation: fade-up 0.45s ease;
 }
@@ -55,60 +57,97 @@
   background: #fff0f2;
 }
 
+.appeals-table {
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(49, 129, 204, 0.12);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+}
+
+.appeals-table__header {
+  display: grid;
+  grid-template-columns: $table-grid;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: #f8fbfe;
+  border-bottom: 1px solid rgba(49, 129, 204, 0.1);
+  
+  span {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: rgb(126, 126, 126, 1); 
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .col-date.sortable {
+    cursor: pointer;
+    transition: color 0.2s ease;
+    gap: 4px;
+
+    &:hover {
+      opacity: 0.8;
+    }
+
+    &::after {
+      font-size: 12px;
+      min-width: 12px;
+    }
+  }
+}
+
 .appeals-list {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.appeals-card {
   display: grid;
-  gap: 0.8rem;
+  grid-template-columns: $table-grid;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.5rem;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(49, 129, 204, 0.06);
+  background: transparent;
+  transition: all 0.2s ease-in-out;
+  position: relative;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background-color: #f0f7ff;
+    transform: scale(1.015);
+    box-shadow: 0 10px 25px rgba(31, 130, 204, 0.1);
+    z-index: 5;
+  }
+}
+
+.appeals-card__id {
+  font-weight: 700;
+  color: var(--blue-800);
+  font-size: 0.9rem;
+}
+
+.appeals-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--blue-900);
+  margin: 0;
+}
+
+.appeals-card__date {
+  font-size: 1rem;
+  color: #64748b;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
 }
 
 .appeals-list__item {
   opacity: 0;
   animation: fade-up 0.35s ease forwards;
-}
-
-.appeals-list__empty {
-  padding: 1rem;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--blue-700);
-}
-
-.appeals-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.1rem;
-  border-radius: 14px;
-  background: linear-gradient(120deg, rgba(255, 255, 255, 0.98), rgba(235, 247, 255, 0.96));
-  border: 1px solid rgba(49, 129, 204, 0.16);
-  box-shadow: 0 10px 24px rgba(31, 130, 204, 0.08);
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 14px 26px rgba(31, 130, 204, 0.14);
-    border-color: rgba(49, 129, 204, 0.34);
-  }
-}
-
-.appeals-card__id {
-  min-width: 74px;
-  text-align: center;
-  font-weight: 700;
-  color: var(--blue-800);
-  background: rgba(107, 181, 247, 0.2);
-  border-radius: 10px;
-  padding: 0.45rem 0.55rem;
-}
-
-.appeals-card__title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--blue-900);
 }
