@@ -5,3 +5,13 @@ services:
         - BUILD_CONFIGURATION=Release
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
