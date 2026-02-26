@@ -133,16 +133,6 @@ services:
     command: >
       sh -c "psql -h postgres -U postgres -d agent-api -v ON_ERROR_STOP=1 -f /seeds/clean.sql"
 
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-
 volumes:
   postgres_data:
   minio_data:
