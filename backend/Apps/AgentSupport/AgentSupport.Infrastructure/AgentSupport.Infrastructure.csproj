@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AgentSupport.Application\AgentSupport.Application.csproj" />
+    <ProjectReference Include="..\AgentSupport.Domain\AgentSupport.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.Database\Infrastructure.Database.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
