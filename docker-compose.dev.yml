@@ -1,0 +1,7 @@
+services:
+  backend:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Development
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
