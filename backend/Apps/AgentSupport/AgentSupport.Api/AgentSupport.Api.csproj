@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.Broker\Infrastructure.Broker.csproj" />
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.Hosting\Infrastructure.Hosting.csproj" />
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.Mapper\Infrastructure.Mapper.csproj" />
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.MinIO\Infrastructure.MinIO.csproj" />
+    <ProjectReference Include="..\..\..\Libs\Infrastructure\Infrastructure.Swagger\Infrastructure.Swagger.csproj" />
+    <ProjectReference Include="..\AgentSupport.Application\AgentSupport.Application.csproj" />
+    <ProjectReference Include="..\AgentSupport.Infrastructure\AgentSupport.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
