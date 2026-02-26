@@ -1,11 +1,11 @@
-$table-grid: 100px 1fr 150px;
+﻿$table-grid: 100px minmax(0, 1fr) 140px;
 
 .appeals-list-page {
   animation: fade-up 0.45s ease;
 }
 
 .appeals-list-page__head {
-  margin-bottom: 1.2rem;
+  margin-bottom: 1.15rem;
 }
 
 .appeals-list-page__title {
@@ -15,7 +15,7 @@ $table-grid: 100px 1fr 150px;
 }
 
 .appeals-list-page__subtitle {
-  margin: 0.5rem 0 0;
+  margin: 0.45rem 0 0;
   color: var(--blue-700);
 }
 
@@ -23,11 +23,12 @@ $table-grid: 100px 1fr 150px;
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.7rem 0.9rem;
+  padding: 0.78rem 0.95rem;
   border-radius: 14px;
-  border: 1px solid rgba(37, 120, 199, 0.16);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 8px 20px rgba(31, 129, 205, 0.08);
+  border: 1px solid rgba(33, 122, 201, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 28px rgba(30, 121, 199, 0.08);
   margin-bottom: 1rem;
 
   svg {
@@ -39,7 +40,7 @@ $table-grid: 100px 1fr 150px;
     border: 0;
     outline: none;
     width: 100%;
-    font-size: 1rem;
+    font-size: 0.98rem;
     color: var(--blue-900);
     background: transparent;
   }
@@ -58,41 +59,41 @@ $table-grid: 100px 1fr 150px;
 }
 
 .appeals-table {
-  background: #ffffff;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid rgba(49, 129, 204, 0.12);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(40, 128, 205, 0.16);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 35px rgba(24, 115, 190, 0.11);
 }
 
 .appeals-table__header {
   display: grid;
   grid-template-columns: $table-grid;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  background: #f8fbfe;
-  border-bottom: 1px solid rgba(49, 129, 204, 0.1);
-  
+  gap: 0.95rem;
+  align-items: center;
+  padding: 0.9rem 1.2rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(240, 249, 255, 0.92));
+  border-bottom: 1px solid rgba(40, 128, 205, 0.12);
+
   span {
-    font-size: 0.85rem;
+    font-size: 0.73rem;
     font-weight: 700;
-    color: rgb(126, 126, 126, 1); 
+    color: #557a9d;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.07em;
   }
 
   .col-date.sortable {
     cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     transition: color 0.2s ease;
-    gap: 4px;
 
     &:hover {
-      opacity: 0.8;
-    }
-
-    &::after {
-      font-size: 12px;
-      min-width: 12px;
+      color: #2e5f8d;
     }
   }
 }
@@ -103,51 +104,104 @@ $table-grid: 100px 1fr 150px;
   padding: 0;
 }
 
+.appeals-list__item {
+  opacity: 0;
+  animation: fade-up 0.35s ease forwards;
+}
+
+.appeals-list__empty {
+  padding: 1rem 1.2rem;
+  color: var(--blue-700);
+}
+
 .appeals-card {
   display: grid;
   grid-template-columns: $table-grid;
   align-items: center;
-  gap: 1rem;
-  padding: 1.1rem 1.5rem;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(49, 129, 204, 0.06);
-  background: transparent;
-  transition: all 0.2s ease-in-out;
-  position: relative;
-
-  &:last-child {
-    border-bottom: none;
-  }
+  gap: 0.95rem;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid rgba(40, 128, 205, 0.08);
+  transition:
+    background-color 0.2s ease,
+    transform 0.2s ease;
 
   &:hover {
-    background-color: #f0f7ff;
-    transform: scale(1.015);
-    box-shadow: 0 10px 25px rgba(31, 130, 204, 0.1);
-    z-index: 5;
+    background: rgba(221, 241, 255, 0.66);
+    transform: translateY(-1px);
   }
+}
+
+.appeals-list__item:last-child .appeals-card {
+  border-bottom: none;
 }
 
 .appeals-card__id {
   font-weight: 700;
-  color: var(--blue-800);
   font-size: 0.9rem;
+  color: var(--blue-800);
 }
 
 .appeals-card__title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--blue-900);
+  min-width: 0;
   margin: 0;
+  color: var(--blue-900);
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .appeals-card__date {
-  font-size: 1rem;
-  color: #64748b;
-  text-align: left;
+  color: #5f7f9f;
+  font-size: 0.92rem;
   font-variant-numeric: tabular-nums;
 }
 
-.appeals-list__item {
-  opacity: 0;
-  animation: fade-up 0.35s ease forwards;
+@media (max-width: 760px) {
+  .appeals-list-page__title {
+    font-size: clamp(1.45rem, 7vw, 1.95rem);
+  }
+
+  .appeals-table {
+    border-radius: 14px;
+  }
+
+  .appeals-table__header {
+    display: none;
+  }
+
+  .appeals-list {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .appeals-card {
+    grid-template-columns: 1fr auto;
+    gap: 0.6rem 0.9rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(40, 128, 205, 0.12);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.9);
+  }
+
+  .appeals-card__id {
+    order: 1;
+    font-size: 0.82rem;
+    letter-spacing: 0.03em;
+  }
+
+  .appeals-card__date {
+    order: 2;
+    justify-self: end;
+    font-size: 0.82rem;
+  }
+
+  .appeals-card__title {
+    order: 3;
+    grid-column: 1 / -1;
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
 }

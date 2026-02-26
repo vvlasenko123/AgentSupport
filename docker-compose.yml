@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -90,7 +90,7 @@ services:
     image: postgres:16-alpine
     container_name: db_init
     restart: "no"
-    profiles: ["tools"]
+    profiles: [ "tools" ]
     environment:
       PGPASSWORD: postgres
     volumes:
@@ -106,7 +106,7 @@ services:
     image: postgres:16-alpine
     container_name: db_all_clean
     restart: "no"
-    profiles: ["tools"]
+    profiles: [ "tools" ]
     environment:
       PGPASSWORD: postgres
     volumes:
@@ -116,7 +116,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "psql -h postgres -U postgres -d agent-api -v ON_ERROR_STOP=1 -f /seeds/clean_all.sql"
-      
+
   # Одноразовый контейнер чтобы удалить 1 запись
   db_clean:
     image: postgres:16-alpine
@@ -133,15 +133,15 @@ services:
     command: >
       sh -c "psql -h postgres -U postgres -d agent-api -v ON_ERROR_STOP=1 -f /seeds/clean.sql"
 
-  # frontend:
-  #   build:
-  #     context: .
-  #     dockerfile: frontend/.../Dockerfile
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - backend
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
