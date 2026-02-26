@@ -12,7 +12,7 @@ Production
 
 1 раз создать контейнеры tools, но НЕ запускать
 ```bash
-  docker compose --profile tools up --no-start db_seed db_cleanup_all
+  docker compose --profile tools up --no-start db_seed db_cleanup_all db_clean
 ```
 
 Запуск сидера (каждый запуск добавит еще записей)
