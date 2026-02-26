@@ -26,5 +26,5 @@ Production
 ```
 Очистка
 ```bash
-docker compose start db_cleanup_all
+  docker compose start db_cleanup_all
 ```
