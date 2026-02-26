@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { appealsApi } from "../../api/appealsApi";
@@ -38,7 +38,7 @@ function AppealsList() {
       result = result.filter(
         (appeal) =>
           appeal.title.toLowerCase().includes(normalized) ||
-          String(appeal.id).includes(normalized)
+          String(appeal.id).includes(normalized),
       );
     }
 
@@ -71,9 +71,7 @@ function AppealsList() {
     <section className="appeals-list-page">
       <div className="appeals-list-page__head">
         <h1 className="appeals-list-page__title">Обращения</h1>
-        <p className="appeals-list-page__subtitle">
-          Поиск и просмотр обращений в реестре
-        </p>
+        <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
       </div>
 
       <div className="appeals-search">
@@ -86,17 +84,24 @@ function AppealsList() {
         />
       </div>
 
+      {isLoading && <p className="appeals-list-page__state">Загрузка обращений...</p>}
+      {error && <p className="appeals-list-page__state appeals-list-page__state--error">{error}</p>}
+
       {!isLoading && !error && (
         <div className="appeals-table">
           <div className="appeals-table__header">
             <span className="col-title">Номер</span>
             <span className="col-title">Обращение</span>
-            <span className="col-date sortable" onClick={toggleSort} role="button">
-              Дата обращения {sortOrder === "desc" ? "↓" : sortOrder === "asc" ? "↑" : ""}
+            <span className="col-date sortable" onClick={toggleSort} role="button" tabIndex={0}>
+              Дата {sortOrder === "desc" ? "↓" : sortOrder === "asc" ? "↑" : ""}
             </span>
           </div>
 
           <ul className="appeals-list">
+            {filteredAndSortedAppeals.length === 0 && (
+              <li className="appeals-list__empty">По вашему запросу ничего не найдено.</li>
+            )}
+
             {filteredAndSortedAppeals.map((appeal, index) => (
               <li
                 className="appeals-list__item"
@@ -106,9 +111,7 @@ function AppealsList() {
                 <Link to={`/appeals/${appeal.id}`} className="appeals-card">
                   <span className="appeals-card__id">#{appeal.id}</span>
                   <span className="appeals-card__title">{appeal.title}</span>
-                  <span className="appeals-card__date">
-                    {appeal.date}
-                  </span>
+                  <span className="appeals-card__date">{appeal.date}</span>
                 </Link>
               </li>
             ))}

@@ -1,4 +1,4 @@
-export type EmotionalTone = "Негатив" | "Нейтрально" | "Позитив";
+﻿export type EmotionalTone = "Негатив" | "Нейтрально" | "Позитив";
 export type SortOrder = "default" | "asc" | "desc";
 
 export interface AppealsResponse {

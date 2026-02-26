@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 import "./Header.scss";
 
 function Header() {
@@ -6,7 +6,7 @@ function Header() {
     <header className="header">
       <div className="header__container">
         <NavLink className="header__brand" to="/appeals">
-          ENIGMA Appeals
+          Agent support
         </NavLink>
         <nav className="header__nav">
           <NavLink

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { appealsApi } from "../../api/appealsApi";
@@ -75,7 +75,9 @@ function AppealPage() {
               {rows.map((row) => (
                 <tr key={row.field}>
                   <td>{row.field}</td>
-                  <td>{row.value}</td>
+                  <td className={row.field === "Суть вопроса" ? "appeal-table__summary" : undefined}>
+                    {row.value}
+                  </td>
                 </tr>
               ))}
             </tbody>
