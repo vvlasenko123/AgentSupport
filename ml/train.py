@@ -74,6 +74,7 @@ def main():
     labels_sentiment = [r["label"] for r in records]
     categories = [r["category"] for r in records]
     issue_summaries = [r["issue_summary"] for r in records]
+    answers = [r.get("answer", "") for r in records]
 
     print(f"Загружаем {RUBERT_MODEL}...")
     tokenizer = AutoTokenizer.from_pretrained(RUBERT_MODEL)
@@ -83,10 +84,12 @@ def main():
     print("Считаем эмбеддинги...")
     emb = get_embeddings(model, tokenizer, texts, device)
 
-    # Сохраняем эмбеддинги и эталоны для issue_summary (nearest neighbor)
+    # Сохраняем эмбеддинги, issue_summary и ответы для nearest neighbor
     np.save(os.path.join(MODELS_DIR, "train_embeddings.npy"), emb)
     with open(os.path.join(MODELS_DIR, "train_issue_summaries.json"), "w", encoding="utf-8") as f:
         json.dump(issue_summaries, f, ensure_ascii=False)
+    with open(os.path.join(MODELS_DIR, "train_answers.json"), "w", encoding="utf-8") as f:
+        json.dump(answers, f, ensure_ascii=False)
     with open(os.path.join(MODELS_DIR, "train_texts.json"), "w", encoding="utf-8") as f:
         json.dump(texts, f, ensure_ascii=False)
 

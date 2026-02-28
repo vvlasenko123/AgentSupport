@@ -1,4 +1,4 @@
-﻿using AgentSupport.Domain.Models.Complaints;
+using AgentSupport.Domain.Models.Complaints;
 using AgentSupport.Infrastructure.Migrations;
 using AgentSupport.Infrastructure.Repositories.ComplaintRepository;
 using Infrastructure.Database.Common.Interfaces;

@@ -44,7 +44,7 @@ def load_devices_list():
 
 
 def prepare_records(records):
-    """Приводит записи к единому формату: text, label, category, issue_summary."""
+    """Приводит записи к единому формату: text, label, category, issue_summary, answer."""
     out = []
     cat_set = set(APPEAL_CATEGORIES)
     for r in records:
@@ -58,10 +58,12 @@ def prepare_records(records):
         if category not in cat_set:
             continue
         issue_summary = (r.get("issue_summary") or "").strip() or text[:200]
+        answer = (r.get("answer") or "").strip()
         out.append({
             "text": text,
             "label": label,
             "category": category,
             "issue_summary": issue_summary,
+            "answer": answer,
         })
     return out

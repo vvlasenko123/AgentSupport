@@ -11,7 +11,6 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from config import EMPTY_PLACEHOLDER
 from model import ComplaintPredictor
 
 app = FastAPI(title="AgentSupport ML", description="Парсинг писем и классификация обращений ЭРИС")
@@ -41,8 +40,8 @@ class EmailMessageModel(BaseModel):
 class ComplaintModel(BaseModel):
     id: Optional[str] = None
     submission_date: Optional[datetime] = Field(None, alias="submissionDate")
-    fio: str = ""
-    object_name: str = Field("", alias="objectName")
+    fio: Optional[str] = None  # null, если не удалось извлечь
+    object_name: Optional[str] = Field(None, alias="objectName")  # название предприятия/объекта
     phone_number: Optional[str] = Field(None, alias="phoneNumber")
     email: Optional[str] = None
     serial_numbers: list[str] = Field(default_factory=list, alias="serialNumbers")
@@ -50,17 +49,11 @@ class ComplaintModel(BaseModel):
     emotional_tone: Optional[str] = Field(None, alias="emotionalTone")
     issue_summary: str = Field("", alias="issueSummary")
     status: str = "Waiting"
-    category: Optional[str] = None  # AppealCategory для бекенда при необходимости
+    category: Optional[str] = None
+    suggested_answer: Optional[str] = Field(None, alias="suggestedAnswer")  # предполагаемый ответ на вопрос
 
     class Config:
         populate_by_name = True
-
-
-def _object_name_from_email(email: Optional[str]) -> str:
-    if not email or "@" not in email:
-        return EMPTY_PLACEHOLDER
-    name = email.split("@", 1)[-1].strip()
-    return name or EMPTY_PLACEHOLDER
 
 
 @app.post("/process", response_model=ComplaintModel)
@@ -89,7 +82,7 @@ def process_email(email: EmailMessageModel) -> ComplaintModel:
         id=email.id,
         submission_date=submission_date,
         fio=out["fio"],
-        object_name=_object_name_from_email(from_email),
+        object_name=out.get("objectName"),
         phone_number=out["phoneNumber"],
         email=from_email,
         serial_numbers=out["serialNumbers"],
@@ -98,6 +91,7 @@ def process_email(email: EmailMessageModel) -> ComplaintModel:
         issue_summary=out["issueSummary"],
         status=out["status"],
         category=out.get("category"),
+        suggested_answer=out.get("suggestedAnswer"),
     )
 
 
@@ -131,7 +125,7 @@ def process_simple_email(req: SimpleEmailRequest) -> ComplaintModel:
     return ComplaintModel(
         submission_date=submission,
         fio=out["fio"],
-        object_name=_object_name_from_email(req.from_email),
+        object_name=out.get("objectName"),
         phone_number=out["phoneNumber"],
         email=req.from_email,
         serial_numbers=out["serialNumbers"],
@@ -140,6 +134,7 @@ def process_simple_email(req: SimpleEmailRequest) -> ComplaintModel:
         issue_summary=out["issueSummary"],
         status=out["status"],
         category=out.get("category"),
+        suggested_answer=out.get("suggestedAnswer"),
     )
 
 

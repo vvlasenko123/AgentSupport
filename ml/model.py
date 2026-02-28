@@ -49,6 +49,8 @@ class ComplaintPredictor:
         self.le_category = None
         self.train_emb = None
         self.train_issue_summaries = None
+        self.train_answers = None
+        self.train_texts = None
         self.devices = []
 
     def load(self):
@@ -79,10 +81,18 @@ class ComplaintPredictor:
 
         path_emb = os.path.join(self.models_dir, "train_embeddings.npy")
         path_sum = os.path.join(self.models_dir, "train_issue_summaries.json")
+        path_ans = os.path.join(self.models_dir, "train_answers.json")
+        path_txt = os.path.join(self.models_dir, "train_texts.json")
         if os.path.isfile(path_emb) and os.path.isfile(path_sum):
             self.train_emb = np.load(path_emb)
             with open(path_sum, "r", encoding="utf-8") as f:
                 self.train_issue_summaries = json.load(f)
+            if os.path.isfile(path_ans):
+                with open(path_ans, "r", encoding="utf-8") as f:
+                    self.train_answers = json.load(f)
+            if os.path.isfile(path_txt):
+                with open(path_txt, "r", encoding="utf-8") as f:
+                    self.train_texts = json.load(f)
 
         self.devices = load_devices_list()
 
@@ -114,12 +124,26 @@ class ComplaintPredictor:
         pred = self.clf_category.predict(emb)[0]
         return str(self.le_category[pred])
 
-    def _nearest_issue_summary(self, emb):
+    def _nearest_issue_summary_and_answer(self, emb, device_type=None):
+        """Ближайший по эмбеддингу пример; при указании device_type приоритет у примеров с этим устройством."""
         if self.train_emb is None or self.train_issue_summaries is None or emb is None:
-            return ""
+            return "", None
         sim = np.dot(self.train_emb, emb.T).ravel()
-        idx = np.argmax(sim)
-        return self.train_issue_summaries[idx]
+        idx = int(np.argmax(sim))
+        if device_type and self.train_texts and len(self.train_texts) == len(sim):
+            device_lower = device_type.lower()
+            mask = np.array([device_lower in (t or "").lower() for t in self.train_texts])
+            if np.any(mask):
+                sim_masked = np.where(mask, sim, -np.inf)
+                idx_masked = int(np.argmax(sim_masked))
+                if sim_masked[idx_masked] > -np.inf:
+                    idx = idx_masked
+        summary = self.train_issue_summaries[idx]
+        answer = None
+        if self.train_answers is not None and idx < len(self.train_answers):
+            a = (self.train_answers[idx] or "").strip()
+            answer = a if a else None
+        return summary, answer
 
     @staticmethod
     def _extract_serials(text):
@@ -148,18 +172,48 @@ class ComplaintPredictor:
 
     @staticmethod
     def _extract_fio(subject, content, from_name):
-        # Из письма часто "Кот Максим Игоревич" или в начале тела
+        # Игнорируем placeholder из Swagger/API (например "string")
         if from_name and from_name.strip():
-            return from_name.strip()
+            name = from_name.strip()
+            if name.lower() not in ("string", "null", ""):
+                return name
         combined = f"{subject or ''} {content or ''}"
-        # Паттерн: Фамилия Имя Отчество или Имя Отчество
-        fio_match = re.search(
+        # "я Даниил Олегович Мезев", "меня зовут Иван Петров", "это Алексей Сергеевич"
+        for pattern in [
+            r"(?:я|меня\s+зовут|это)\s+([А-ЯЁа-яё]+\s+[А-ЯЁа-яё]+(?:\s+[А-ЯЁа-яё]+)?)(?=[\s,\.]|$)",
             r"(?:^|[,\.\s])([А-ЯЁа-яё]+\s+[А-ЯЁа-яё]+(?:\s+[А-ЯЁа-яё]+)?)(?=[,\.\s]|$)",
-            combined[:500],
-        )
-        if fio_match:
-            return fio_match.group(1).strip()
-        return ""
+        ]:
+            m = re.search(pattern, combined[:800], re.I)
+            if m:
+                fio = m.group(1).strip()
+                if len(fio) > 2 and len(fio) < 120:
+                    return fio
+        return None
+
+    @staticmethod
+    def _extract_object_name(subject, content, from_email):
+        """Название предприятия или объекта, откуда поступило обращение."""
+        combined = f"{subject or ''} {content or ''}"
+        # ПАО/ООО/АО/ОАО «Название», компания X, от лица X, на объекте X, ГНС «X», нефтебаза, и т.д.
+        org_patterns = [
+            r"(?:ПАО|ООО|АО|ОАО)\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+            r"(?:компания|организация|предприятие|служба)\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+            r"от\s+лица\s+([А-ЯЁа-яё0-9\s\-]+?)(?:\s*\.|,|\n|$)",
+            r"на\s+объекте\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+            r"ГНС\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+            r"нефтебаза\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+            r"(?:установке|на\s+установке)\s+[«\"']?([А-ЯЁа-яё0-9\s\-]+)[»\"']?",
+        ]
+        for pat in org_patterns:
+            m = re.search(pat, combined[:1500], re.I)
+            if m:
+                name = m.group(1).strip()
+                if len(name) > 2 and len(name) < 150:
+                    return name
+        # Fallback: домен из email как название объекта
+        if from_email and "@" in from_email:
+            return from_email.split("@", 1)[-1].strip()
+        return None
 
     def predict(self, subject, content, from_email=None, from_name=None):
         """
@@ -170,23 +224,27 @@ class ComplaintPredictor:
         emb = self._embed(full_text)
 
         fio = self._extract_fio(subject, content, from_name)
+        fio = fio.strip() if fio else None  # null, если не найден
         phone = self._extract_phone(full_text)
         serials = self._extract_serials(full_text)
         device_type = self._detect_device_type(full_text)
         emotional_tone = self._predict_sentiment(emb)
         category = self._predict_category(emb)
-        issue_summary = self._nearest_issue_summary(emb)
+        issue_summary, suggested_answer = self._nearest_issue_summary_and_answer(emb, device_type=device_type)
         if not issue_summary and full_text.strip():
             issue_summary = full_text[:300].strip()
+        issue_summary = issue_summary.strip() if issue_summary else EMPTY_PLACEHOLDER
+        object_name = self._extract_object_name(subject, content, from_email)
 
-        # Незаполненные поля: строки — прочерк, опциональные — null (оставляем None)
         return {
-            "fio": fio.strip() or EMPTY_PLACEHOLDER,
-            "phoneNumber": phone,  # None → null в JSON
-            "serialNumbers": serials if serials else [],  # пустой список, не null
-            "deviceType": device_type,  # None → null в JSON
+            "fio": fio,  # None → null в JSON, если не найден
+            "objectName": object_name,  # название предприятия/объекта
+            "phoneNumber": phone,
+            "serialNumbers": serials if serials else [],
+            "deviceType": device_type,
             "emotionalTone": emotional_tone.strip() if emotional_tone else EMPTY_PLACEHOLDER,
-            "issueSummary": issue_summary.strip() if issue_summary else EMPTY_PLACEHOLDER,
+            "issueSummary": issue_summary,
             "category": category.strip() if category else EMPTY_PLACEHOLDER,
             "status": DEFAULT_STATUS,
+            "suggestedAnswer": suggested_answer,  # предполагаемый ответ на вопрос (из обучающей выборки)
         }
