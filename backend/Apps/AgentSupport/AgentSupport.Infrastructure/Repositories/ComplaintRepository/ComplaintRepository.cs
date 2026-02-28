@@ -32,7 +32,8 @@ SELECT
     serial_numbers AS SerialNumbers,
     device_type AS DeviceType,
     emotional_tone AS EmotionalTone,
-    issue_summary AS IssueSummary
+    issue_summary AS IssueSummary,
+    status AS Status
 FROM complaints
 WHERE id = @Id;
 ";
@@ -62,7 +63,8 @@ SELECT
     serial_numbers AS SerialNumbers,
     device_type AS DeviceType,
     emotional_tone AS EmotionalTone,
-    issue_summary AS IssueSummary
+    issue_summary AS IssueSummary,
+    status AS Status
 FROM complaints
 ORDER BY submission_date DESC;
 ";
@@ -96,7 +98,8 @@ INSERT INTO complaints
     serial_numbers,
     device_type,
     emotional_tone,
-    issue_summary
+    issue_summary,
+    status
 )
 VALUES
 (
@@ -109,7 +112,8 @@ VALUES
     @SerialNumbers,
     @DeviceType,
     @EmotionalTone,
-    @IssueSummary
+    @IssueSummary,
+    @Status
 );
 ";
 
@@ -129,6 +133,7 @@ VALUES
                 entity.DeviceType,
                 entity.EmotionalTone,
                 entity.IssueSummary,
+                entity.Status,
             },
             cancellationToken: cancellationToken));
 
@@ -154,7 +159,8 @@ SET
     serial_numbers = @SerialNumbers,
     device_type = @DeviceType,
     emotional_tone = @EmotionalTone,
-    issue_summary = @IssueSummary
+    issue_summary = @IssueSummary,
+    status = @Status
 WHERE id = @Id;
 ";
 
@@ -174,6 +180,7 @@ WHERE id = @Id;
                 entity.DeviceType,
                 entity.EmotionalTone,
                 entity.IssueSummary,
+                entity.Status,
             },
             cancellationToken: cancellationToken));
 

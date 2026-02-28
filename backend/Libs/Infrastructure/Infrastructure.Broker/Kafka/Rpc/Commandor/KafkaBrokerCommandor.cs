@@ -168,7 +168,13 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        _producer.Flush(TimeSpan.FromSeconds(5));
-        _producer.Dispose();
+        try
+        {
+            _producer.Flush(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            _producer.Dispose();
+        }
     }
 }

@@ -1,6 +1,5 @@
 ﻿using Infrastructure.Broker.Kafka.Rpc.Commandor;
 using Infrastructure.Broker.Kafka.Rpc.Interfaces;
-using Infrastructure.Broker.Kafka.Rpc.Services;
 using Infrastructure.Broker.Options;
 using Infrastructure.Options.Extensions.Validate;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +17,6 @@ public static class KafkaStartUp
     public static void AddKafka(this IServiceCollection services)
     {
         services.AddKafkaClient();
-        services.AddKafkaServer();
     }
 
     /// <summary>
@@ -32,13 +30,5 @@ public static class KafkaStartUp
             .ValidateOnStart();
 
         services.AddSingleton<IKafkaBrokerCommandor, KafkaBrokerCommandor>();
-    }
-
-    /// <summary>
-    /// Добавление Kafka RPC сервера (для обработки входящих запросов)
-    /// </summary>
-    public static void AddKafkaServer(this IServiceCollection services)
-    {
-        services.AddHostedService<KafkaRpcServerHostedService>();
     }
 }

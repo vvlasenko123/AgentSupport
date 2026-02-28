@@ -53,4 +53,9 @@ public sealed class CreateComplaintRequest
     /// Суть вопроса (выжимка из письма)
     /// </summary>
     public string IssueSummary { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Статус жалобы
+    /// </summary>
+    public string Status { get; set; } = "open";
 }
