@@ -132,8 +132,42 @@ services:
         condition: service_healthy
     command: >
       sh -c "psql -h postgres -U postgres -d agent-api -v ON_ERROR_STOP=1 -f /seeds/clean.sql"
+      
+
+  # Авторизация и аутентификация Payk96
+  keycloak_1:
+    image: quay.io/keycloak/keycloak:26.2.0
+    container_name: keycloak
+    environment:
+      - KC_DB=postgres
+      - KC_DB_URL_HOST=keycloakSQL
+      - KC_DB_URL_DATABASE=keycloak
+      - KC_DB_USERNAME=postgres
+      - KC_DB_PASSWORD=postgres
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - "8484:8080"
+    command: start-dev
+    depends_on:
+      - keycloakSQL
+    restart: unless-stopped
+
+  keycloakSQL:
+    container_name: keycloakSQL
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=keycloak
+    ports:
+      - "5433:5432"
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   minio_data:
   kafka_data:
+  keycloak_data:
