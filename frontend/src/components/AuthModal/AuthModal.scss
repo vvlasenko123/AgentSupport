@@ -1,0 +1,76 @@
+.auth-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+}
+
+.auth-modal__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 28, 45, 0.45);
+}
+
+.auth-modal__content {
+  position: relative;
+  width: min(430px, calc(100% - 2rem));
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(63, 139, 209, 0.2);
+  box-shadow: 0 20px 40px rgba(15, 73, 122, 0.2);
+  padding: 1.2rem;
+}
+
+.auth-modal__title {
+  margin: 0 0 0.8rem;
+  color: #0e4a7b;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.auth-form__label {
+  display: grid;
+  gap: 0.35rem;
+  color: #215581;
+  font-weight: 600;
+}
+
+.auth-form__input {
+  height: 42px;
+  border: 1px solid rgba(63, 139, 209, 0.28);
+  border-radius: 10px;
+  padding: 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.auth-form__error {
+  margin: 0;
+  color: #d1242f;
+  font-size: 0.9rem;
+}
+
+.auth-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.auth-form__btn {
+  height: 38px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 0.9rem;
+  cursor: pointer;
+  background: linear-gradient(135deg, #1a6eb2, #2e96ea);
+  color: #fff;
+  font-weight: 700;
+}
+
+.auth-form__btn--ghost {
+  background: #eef6ff;
+  color: #0e4a7b;
+}
