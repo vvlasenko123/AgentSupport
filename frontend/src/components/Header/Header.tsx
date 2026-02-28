@@ -1,30 +1,26 @@
-﻿import { type FormEvent, useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
-import { isAuthorized, loginWithPassword, logout } from "../../utils/auth";
+﻿import { useEffect, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import AuthModal from "../AuthModal/AuthModal";
+import { isAuthorized, logout } from "../../utils/auth";
 import "./Header.scss";
 
 function Header() {
+  const navigate = useNavigate();
   const [authorized, setAuthorized] = useState<boolean>(() => isAuthorized());
   const [menuOpen, setMenuOpen] = useState(false);
-
   const [loginOpen, setLoginOpen] = useState(false);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const closeMenu = () => setMenuOpen(false);
-  const closeLogin = () => {
-    setLoginOpen(false);
-    setAuthError(null);
-    setPassword("");
-  };
+  const closeLogin = () => setLoginOpen(false);
 
   useEffect(() => {
     const syncAuth = () => {
-      setAuthorized(isAuthorized());
-      if (!isAuthorized()) {
+      const auth = isAuthorized();
+      setAuthorized(auth);
+
+      if (!auth) {
         closeMenu();
+        closeLogin();
       }
     };
 
@@ -37,57 +33,33 @@ function Header() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!loginOpen) return;
-
-    const onEsc = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeLogin();
-      }
-    };
-
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [loginOpen]);
-
-  const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!username.trim() || !password.trim()) {
-      setAuthError("Введите логин и пароль.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      setAuthError(null);
-      await loginWithPassword({ username: username.trim(), password });
-      setAuthorized(true);
-      closeLogin();
-      closeMenu();
-    } catch {
-      setAuthError("Ошибка входа. Проверьте логин и пароль.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleLogout = () => {
     logout();
     setAuthorized(false);
     closeMenu();
+    navigate("/home", { replace: true });
   };
 
   return (
     <>
       <header className="header">
         <div className="header__container">
-          <NavLink className="header__brand" to="/appeals" onClick={closeMenu}>
+          <NavLink className="header__brand" to="/home" onClick={closeMenu}>
             Agent support
           </NavLink>
 
           <div className="header__right">
             <nav className="header__nav">
+              <NavLink
+                to="/home"
+                className={({ isActive }) =>
+                  isActive ? "header__link header__link--active" : "header__link"
+                }
+                onClick={closeMenu}
+              >
+                Главная
+              </NavLink>
+
               <NavLink
                 to="/appeals"
                 className={({ isActive }) =>
@@ -135,6 +107,16 @@ function Header() {
 
         <div className={`mobile-menu${menuOpen ? " mobile-menu--open" : ""}`}>
           <NavLink
+            to="/home"
+            className={({ isActive }) =>
+              isActive ? "mobile-menu-link mobile-menu-link--active" : "mobile-menu-link"
+            }
+            onClick={closeMenu}
+          >
+            Главная
+          </NavLink>
+
+          <NavLink
             to="/appeals"
             className={({ isActive }) =>
               isActive ? "mobile-menu-link mobile-menu-link--active" : "mobile-menu-link"
@@ -177,51 +159,15 @@ function Header() {
         </div>
       </header>
 
-      {loginOpen && (
-        <div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-          <div className="auth-modal__overlay" onClick={closeLogin} />
-          <div className="auth-modal__content">
-            <h2 id="auth-modal-title" className="auth-modal__title">
-              Вход
-            </h2>
-
-            <form className="auth-form" onSubmit={handleLoginSubmit}>
-              <label className="auth-form__label">
-                Логин
-                <input
-                  className="auth-form__input"
-                  type="text"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                />
-              </label>
-
-              <label className="auth-form__label">
-                Пароль
-                <input
-                  className="auth-form__input"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-
-              {authError && <p className="auth-form__error">{authError}</p>}
-
-              <div className="auth-form__actions">
-                <button type="button" className="auth-form__btn auth-form__btn--ghost" onClick={closeLogin}>
-                  Отмена
-                </button>
-                <button type="submit" className="auth-form__btn" disabled={isSubmitting}>
-                  {isSubmitting ? "Вход..." : "Войти"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AuthModal
+        open={loginOpen}
+        onClose={closeLogin}
+        onSuccess={() => {
+          setAuthorized(true);
+          closeMenu();
+          navigate("/appeals", { replace: true });
+        }}
+      />
     </>
   );
 }
