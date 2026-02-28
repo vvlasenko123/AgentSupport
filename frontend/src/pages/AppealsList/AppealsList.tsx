@@ -153,12 +153,11 @@ function AppealsList() {
 
   return (
     <section className="appeals-list-page">
-      <div className="appeals-list-page__head">
+      <div className="appeals-list-page__head appeals-list">
         <div>
           <h1 className="appeals-list-page__title">Обращения</h1>
           <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
         </div>
-
 
         <div className="export-buttons">
           <button onClick={exportToCSV}>Выгрузить в CSV</button>
