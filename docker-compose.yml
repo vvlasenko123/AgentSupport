@@ -132,7 +132,6 @@ services:
         condition: service_healthy
     command: >
       sh -c "psql -h postgres -U postgres -d agent-api -v ON_ERROR_STOP=1 -f /seeds/clean.sql"
-      
 
   # Авторизация и аутентификация Payk96
   keycloak_1:
@@ -146,6 +145,8 @@ services:
       - KC_DB_PASSWORD=postgres
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_SPI_CORS_ALLOWED_ORIGINS=*
+      - KC_SPI_CORS_ENABLED=true
     ports:
       - "8484:8080"
     command: start-dev
