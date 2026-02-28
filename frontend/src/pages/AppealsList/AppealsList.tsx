@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
-import { appealsApi } from "../../api/appealsApi";
+import { appealsApi } from "../../utils/appealsApi";
 import type { AppealListItem, SortOrder } from "../../types/appeal";
 import "./AppealsList.scss";
 

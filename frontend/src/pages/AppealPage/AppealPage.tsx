@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { appealsApi } from "../../api/appealsApi";
+import { appealsApi } from "../../utils/appealsApi";
 import type { AppealDetails } from "../../types/appeal";
 import "./AppealPage.scss";
 
