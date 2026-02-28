@@ -24,6 +24,7 @@ public static class InfrastructureStartUp
 
         #region Миграции применения
         services.AddTransient<IDatabaseMigration, ComplaintCreateTableMigration>();
+        services.AddTransient<IDatabaseMigration, ComplaintAddStatusMigration>();
         #endregion
 
         #region Репозитории
