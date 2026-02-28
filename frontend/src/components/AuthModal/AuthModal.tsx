@@ -1,4 +1,5 @@
-import { type FormEvent, useEffect, useState } from "react";
+﻿import { type FormEvent, useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { loginWithPassword } from "../../utils/auth";
 import "./AuthModal.scss";
 
@@ -11,6 +12,7 @@ type AuthModalProps = {
 function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -28,6 +30,7 @@ function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   useEffect(() => {
     if (open) return;
     setPassword("");
+    setShowPassword(false);
     setAuthError(null);
   }, [open]);
 
@@ -76,13 +79,23 @@ function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
           <label className="auth-form__label">
             Пароль
-            <input
-              className="auth-form__input"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
+            <div className="auth-form__password-wrap">
+              <input
+                className="auth-form__input auth-form__input--password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className="auth-form__toggle-password"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </label>
 
           {authError && <p className="auth-form__error">{authError}</p>}
