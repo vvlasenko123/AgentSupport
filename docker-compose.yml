@@ -185,7 +185,7 @@ services:
   smtp_connector:
     build:
       context: .
-      dockerfile: Api/Dockerfile
+      dockerfile: backend/Apps/SmtpConnector/Api/Dockerfile
     secrets:
       - gcp_sa
     environment:
@@ -194,6 +194,17 @@ services:
       - PubSubOptions__ServiceAccountJsonPath=/run/secrets/gcp_sa
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
       - GOOGLE_CLOUD_PROJECT=glass-sylph-488810-k2
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: ml-service
+    restart: unless-stopped
+    ports:
+      - "6767:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
 
 volumes:
   postgres_data:
