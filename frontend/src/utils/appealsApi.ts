@@ -13,9 +13,9 @@ const formatIsoDate = (value: string): string => {
 
 const toListItem = (item: ComplaintDto): AppealListItem => ({
   id: item.id,
-  title: (item.issueSummary || item.objectName || "Обращение без названия").slice(0, 120),
+  title: (item.issueSummary || item.objectName || "РћР±СЂР°С‰РµРЅРёРµ Р±РµР· РЅР°Р·РІР°РЅРёСЏ").slice(0, 120),
   date: formatIsoDate(item.submissionDate), 
-  status: (item.status || "Неизвестно"),
+  status: (item.status || "РќРµРёР·РІРµСЃС‚РЅРѕ"),
 });
 
 const toDetails = (item: ComplaintDto): AppealDetails => ({
@@ -32,8 +32,13 @@ const toDetails = (item: ComplaintDto): AppealDetails => ({
 });
 
 export const appealsApi = {
-  async getAppealsList(): Promise<AppealListItem[]> {
+  async getComplaintsRaw(): Promise<ComplaintDto[]> {
     const { data } = await axiosInstance.get<ComplaintDto[]>("agent/complaints");
+    return data;
+  },
+
+  async getAppealsList(): Promise<AppealListItem[]> {
+    const data = await this.getComplaintsRaw();
     return data.map(toListItem);
   },
 
