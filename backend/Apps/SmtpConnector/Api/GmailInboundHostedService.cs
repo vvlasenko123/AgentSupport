@@ -1,11 +1,15 @@
+using System.Net;
 using System.Text.Json;
+using Google.Api.Gax.Grpc;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Gmail.v1;
 using Google.Apis.Gmail.v1.Data;
 using Google.Apis.Services;
+using Google.Cloud.Iam.V1;
 using Google.Cloud.PubSub.V1;
 using Google.Protobuf;
+using Grpc.Core;
 using Infrastructure.Broker.Kafka.Contracts.Interfaces;
 using Microsoft.Extensions.Options;
 using SmtpConnector.Api.Factory;
@@ -18,13 +22,16 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 {
     private static readonly TimeSpan WatchRenewInterval = TimeSpan.FromDays(1);
 
+    private const string GmailPublisherMember = "serviceAccount:gmail-api-push@system.gserviceaccount.com";
+    private const string PubSubPublisherRole = "roles/pubsub.publisher";
+
     private readonly GmailOptions _gmailOptions;
     private readonly PubSubOptions _pubSubOptions;
     private readonly ILogger<GmailInboundHostedService> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IHistoryStateStore _historyStateStore;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     private SubscriberClient? _subscriber;
+    private Task? _subscriberTask;
     private CancellationTokenSource? _cts;
     private Task? _watchRenewTask;
     private readonly SemaphoreSlim _handleLock;
@@ -32,15 +39,13 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
     public GmailInboundHostedService(
         IOptions<GmailOptions> gmailOptions,
         IOptions<PubSubOptions> pubSubOptions,
-        IHistoryStateStore historyStateStore,
         ILogger<GmailInboundHostedService> logger,
-        IServiceProvider serviceProvider)
+        IServiceScopeFactory scopeFactory)
     {
         _gmailOptions = gmailOptions.Value;
         _pubSubOptions = pubSubOptions.Value;
-        _historyStateStore = historyStateStore;
         _logger = logger;
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _handleLock = new SemaphoreSlim(1, 1);
     }
 
@@ -50,12 +55,13 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        await EnsurePubSubInfrastructureAsync(_cts.Token);
         await EnsureWatchAsync(_cts.Token);
 
         _watchRenewTask = Task.Run(() => WatchRenewLoopAsync(_cts.Token), _cts.Token);
 
         _subscriber = await CreateSubscriberAsync(_cts.Token);
-        _ = _subscriber.StartAsync(HandleMessageAsync);
+        _subscriberTask = _subscriber.StartAsync(HandleMessageAsync);
 
         _logger.LogInformation(
             "Gmail connector запущен. Pub/Sub subscription: {ProjectId}/{SubscriptionId}",
@@ -75,6 +81,21 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
         if (_subscriber is not null)
         {
             await _subscriber.StopAsync(CancellationToken.None);
+        }
+
+        if (_subscriberTask is not null)
+        {
+            try
+            {
+                await _subscriberTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка работы Pub/Sub подписчика");
+            }
         }
 
         if (_watchRenewTask is not null)
@@ -125,6 +146,8 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
         {
             throw new InvalidOperationException("Не задан PubSubOptions.ServiceAccountJsonPath");
         }
+
+        _ = GetValidatedTopicName();
     }
 
     private async Task WatchRenewLoopAsync(CancellationToken cancellationToken)
@@ -149,6 +172,21 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
     private async Task EnsureWatchAsync(CancellationToken cancellationToken)
     {
+        try
+        {
+            await EnsureWatchCoreAsync(cancellationToken);
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning(ex, "Не удалось настроить Gmail watch. Попробую пересоздать ресурсы Pub/Sub и повторить");
+
+            await EnsurePubSubInfrastructureAsync(cancellationToken);
+            await EnsureWatchCoreAsync(cancellationToken);
+        }
+    }
+
+    private async Task EnsureWatchCoreAsync(CancellationToken cancellationToken)
+    {
         var gmail = CreateGmailService();
 
         var request = new WatchRequest
@@ -162,11 +200,11 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
         if (string.IsNullOrWhiteSpace(watchResponse.HistoryId.ToString()) is false)
         {
-            var current = await _historyStateStore.GetLastHistoryIdAsync(cancellationToken);
+            var current = await GetLastHistoryIdAsync(cancellationToken);
 
             if (string.IsNullOrWhiteSpace(current))
             {
-                await _historyStateStore.SaveLastHistoryIdAsync(watchResponse.HistoryId.ToString(), cancellationToken);
+                await SaveLastHistoryIdAsync(watchResponse.HistoryId.ToString(), cancellationToken);
             }
         }
 
@@ -207,11 +245,192 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
         });
     }
 
+    private async Task EnsurePubSubInfrastructureAsync(CancellationToken cancellationToken)
+    {
+        var topicName = GetValidatedTopicName();
+        var subscriptionName = SubscriptionName.FromProjectSubscription(_pubSubOptions.ProjectId, _pubSubOptions.SubscriptionId);
+
+        var credential = GoogleCredential.FromFile(_pubSubOptions.ServiceAccountJsonPath);
+
+        var publisherApi = await new PublisherServiceApiClientBuilder
+        {
+            Credential = credential
+        }.BuildAsync(cancellationToken);
+
+        var subscriberApi = await new SubscriberServiceApiClientBuilder
+        {
+            Credential = credential
+        }.BuildAsync(cancellationToken);
+
+        await EnsureTopicAsync(publisherApi, topicName, cancellationToken);
+        await EnsureTopicIamAsync(publisherApi, topicName, cancellationToken);
+        await EnsureSubscriptionAsync(subscriberApi, subscriptionName, topicName, cancellationToken);
+    }
+
+    private TopicName GetValidatedTopicName()
+    {
+        TopicName topicName;
+
+        try
+        {
+            topicName = TopicName.Parse(_gmailOptions.TopicName);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Некорректный GmailOptions.TopicName. Ожидается формат projects/<projectId>/topics/<topicId>",
+                ex);
+        }
+
+        if (string.Equals(topicName.ProjectId, _pubSubOptions.ProjectId, StringComparison.Ordinal) is false)
+        {
+            throw new InvalidOperationException("GmailOptions.TopicName должен использовать тот же ProjectId, что и PubSubOptions.ProjectId");
+        }
+
+        return topicName;
+    }
+
+    private async Task EnsureTopicAsync(PublisherServiceApiClient publisherApi, TopicName topicName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await publisherApi.GetTopicAsync(topicName, cancellationToken: cancellationToken);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            _ = await publisherApi.CreateTopicAsync(topicName, cancellationToken: cancellationToken);
+            _logger.LogInformation("Pub/Sub topic создан: {Topic}", topicName.ToString());
+        }
+    }
+
+    private async Task EnsureSubscriptionAsync(
+        SubscriberServiceApiClient subscriberApi,
+        SubscriptionName subscriptionName,
+        TopicName topicName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await subscriberApi.GetSubscriptionAsync(subscriptionName, cancellationToken: cancellationToken);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            var subscription = new Subscription
+            {
+                SubscriptionName = subscriptionName,
+                TopicAsTopicName = topicName
+            };
+
+            _ = await subscriberApi.CreateSubscriptionAsync(subscription, cancellationToken: cancellationToken);
+
+            _logger.LogInformation(
+                "Pub/Sub subscription создана: {Subscription} -> {Topic}",
+                subscriptionName.ToString(),
+                topicName.ToString());
+        }
+    }
+
+    private async Task EnsureTopicIamAsync(PublisherServiceApiClient publisherApi, TopicName topicName, CancellationToken cancellationToken)
+    {
+        Policy policy;
+
+        try
+        {
+            var getRequest = new GetIamPolicyRequest
+            {
+                ResourceAsResourceName = topicName
+            };
+
+            policy = await publisherApi.IAMPolicyClient.GetIamPolicyAsync(
+                getRequest,
+                CallSettings.FromCancellationToken(cancellationToken));
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            throw new InvalidOperationException("Pub/Sub topic не найден при чтении IAM политики");
+        }
+
+        if (HasPublisherBinding(policy))
+        {
+            return;
+        }
+
+        AddPublisherBinding(policy);
+
+        var setRequest = new SetIamPolicyRequest
+        {
+            ResourceAsResourceName = topicName,
+            Policy = policy
+        };
+
+        _ = await publisherApi.IAMPolicyClient.SetIamPolicyAsync(
+            setRequest,
+            CallSettings.FromCancellationToken(cancellationToken));
+
+        _logger.LogInformation("Выданы права publish для Gmail на topic: {Topic}", topicName.ToString());
+    }
+
+    private static bool HasPublisherBinding(Policy policy)
+    {
+        foreach (var binding in policy.Bindings)
+        {
+            if (string.Equals(binding.Role, PubSubPublisherRole, StringComparison.Ordinal) is false)
+            {
+                continue;
+            }
+
+            foreach (var member in binding.Members)
+            {
+                if (string.Equals(member, GmailPublisherMember, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static void AddPublisherBinding(Policy policy)
+    {
+        Binding? publisherBinding = null;
+
+        foreach (var binding in policy.Bindings)
+        {
+            if (string.Equals(binding.Role, PubSubPublisherRole, StringComparison.Ordinal))
+            {
+                publisherBinding = binding;
+                break;
+            }
+        }
+
+        if (publisherBinding is null)
+        {
+            publisherBinding = new Binding
+            {
+                Role = PubSubPublisherRole
+            };
+
+            policy.Bindings.Add(publisherBinding);
+        }
+
+        foreach (var member in publisherBinding.Members)
+        {
+            if (string.Equals(member, GmailPublisherMember, StringComparison.Ordinal))
+            {
+                return;
+            }
+        }
+
+        publisherBinding.Members.Add(GmailPublisherMember);
+    }
+
     private async Task<SubscriberClient> CreateSubscriberAsync(CancellationToken cancellationToken)
     {
         var subscriptionName = SubscriptionName.FromProjectSubscription(_pubSubOptions.ProjectId, _pubSubOptions.SubscriptionId);
 
         var googleCredential = GoogleCredential.FromFile(_pubSubOptions.ServiceAccountJsonPath);
+
         var builder = new SubscriberClientBuilder
         {
             SubscriptionName = subscriptionName,
@@ -231,31 +450,53 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
             if (notification is null)
             {
-                _logger.LogWarning("Не удалось разобрать уведомление Pub/Sub");
+                var preview = BuildBase64Preview(message.Data);
+
+                _logger.LogWarning(
+                    "Не удалось разобрать уведомление Pub/Sub. MessageId={MessageId}, PublishTime={PublishTime}, DataBase64Preview={Data}",
+                    message.MessageId,
+                    message.PublishTime,
+                    preview);
+
                 return SubscriberClient.Reply.Ack;
             }
 
-            var lastHistoryId = await _historyStateStore.GetLastHistoryIdAsync(cancellationToken);
+            var lastHistoryId = await GetLastHistoryIdAsync(cancellationToken);
+            
+            if (ulong.TryParse(lastHistoryId, out var last) && ulong.TryParse(notification.HistoryId, out var incoming))
+            {
+                if (incoming <= last)
+                {
+                    return SubscriberClient.Reply.Ack;
+                }
+            }
 
             if (string.IsNullOrWhiteSpace(lastHistoryId))
             {
-                await _historyStateStore.SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
+                await SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
                 return SubscriberClient.Reply.Ack;
             }
 
             try
             {
-                await ProcessChangesAsync(lastHistoryId, notification.HistoryId, cancellationToken);
-                await _historyStateStore.SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
+                var processed = await ProcessChangesAsync(lastHistoryId, notification.HistoryId, cancellationToken);
+                await SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
+
+                _logger.LogInformation(
+                    "История обработана. startHistoryId={Start} newHistoryId={New} processed={Count}",
+                    lastHistoryId,
+                    notification.HistoryId,
+                    processed);
+
                 return SubscriberClient.Reply.Ack;
             }
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning(ex, "Письмо отклонено обработчиком");
-                await _historyStateStore.SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
+                await SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
                 return SubscriberClient.Reply.Ack;
             }
-            catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+            catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
             {
                 _logger.LogWarning("HistoryId устарел или неверный. Выполняю повторный watch");
                 await EnsureWatchAsync(cancellationToken);
@@ -263,8 +504,9 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
             }
             catch (TimeoutException ex)
             {
-                _logger.LogWarning(ex, "Таймаут при вызове AgentSupportApi. Повторю обработку");
-                return SubscriberClient.Reply.Nack;
+                _logger.LogWarning(ex, "Таймаут при ожидании RPC-ответа. Повтор не нужен");
+                await SaveLastHistoryIdAsync(notification.HistoryId, cancellationToken);
+                return SubscriberClient.Reply.Ack;
             }
             catch (Exception ex)
             {
@@ -278,9 +520,30 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
         }
     }
 
-    private async Task ProcessChangesAsync(string startHistoryId, string newHistoryId, CancellationToken cancellationToken)
+    private static string BuildBase64Preview(ByteString data)
+    {
+        if (data.IsEmpty)
+        {
+            return "<пусто>";
+        }
+
+        var base64 = Convert.ToBase64String(data.ToByteArray());
+
+        const int maxLen = 220;
+
+        if (base64.Length <= maxLen)
+        {
+            return base64;
+        }
+
+        return base64.Substring(0, maxLen) + "...";
+    }
+
+    private async Task<int> ProcessChangesAsync(string startHistoryId, string newHistoryId, CancellationToken cancellationToken)
     {
         var gmail = CreateGmailService();
+        var handled = new HashSet<string>(StringComparer.Ordinal);
+        var processedCount = 0;
 
         var historyRequest = gmail.Users.History.List(_gmailOptions.UserId);
         historyRequest.StartHistoryId = ParseUlong(startHistoryId);
@@ -316,7 +579,13 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
                             continue;
                         }
 
+                        if (handled.Add(id) is false)
+                        {
+                            continue;
+                        }
+
                         await HandleMessageIdAsync(gmail, id, cancellationToken);
+                        processedCount++;
                     }
                 }
             }
@@ -325,13 +594,13 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
         }
         while (string.IsNullOrWhiteSpace(pageToken) is false);
 
-        _logger.LogInformation("История обработана. startHistoryId={Start} newHistoryId={New}", startHistoryId, newHistoryId);
+        return processedCount;
     }
 
     private async Task HandleMessageIdAsync(GmailService gmail, string messageId, CancellationToken cancellationToken)
     {
         var get = gmail.Users.Messages.Get(_gmailOptions.UserId, messageId);
-        get.Format = UsersResource.MessagesResource.GetRequest.FormatEnum.Raw;
+        get.Format = Google.Apis.Gmail.v1.UsersResource.MessagesResource.GetRequest.FormatEnum.Raw;
 
         var msg = await get.ExecuteAsync(cancellationToken);
 
@@ -342,11 +611,25 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
         var rawBytes = Base64Url.Decode(msg.Raw);
 
-        using var scope = _serviceProvider.CreateScope();
+        using var scope = _scopeFactory.CreateScope();
         var ingestor = scope.ServiceProvider.GetRequiredService<IEmailIngestor>();
 
         var request = EmailRequestFactory.Build(rawBytes);
         await ingestor.IngestAsync(request, cancellationToken);
+    }
+
+    private async Task<string?> GetLastHistoryIdAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IHistoryStateStore>();
+        return await store.GetLastHistoryIdAsync(cancellationToken);
+    }
+
+    private async Task SaveLastHistoryIdAsync(string historyId, CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IHistoryStateStore>();
+        await store.SaveLastHistoryIdAsync(historyId, cancellationToken);
     }
 
     private static ulong ParseUlong(string value)
@@ -361,36 +644,62 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
 
     private static GmailNotification? TryParseNotification(ByteString data)
     {
-        var text = data.ToStringUtf8();
+        var text = data.ToStringUtf8().Trim();
 
         if (string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
 
+        if (TryParseNotificationJson(text, out var notification))
+        {
+            return notification;
+        }
+
         try
         {
-            using var doc = JsonDocument.Parse(text);
-            return GmailNotification.From(doc);
+            var decodedBytes = Base64Url.Decode(text);
+            var decodedText = System.Text.Encoding.UTF8.GetString(decodedBytes).Trim();
+
+            if (TryParseNotificationJson(decodedText, out notification))
+            {
+                return notification;
+            }
         }
         catch
         {
-            try
-            {
-                var decoded = Base64Url.DecodeToString(text);
-                using var doc = JsonDocument.Parse(decoded);
-                return GmailNotification.From(doc);
-            }
-            catch
-            {
-                return null;
-            }
+        }
+
+        return null;
+    }
+
+    private static bool TryParseNotificationJson(string text, out GmailNotification? notification)
+    {
+        notification = null;
+
+        var trimmed = text.Trim();
+
+        if (trimmed.StartsWith("{", StringComparison.Ordinal) is false)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            notification = GmailNotification.From(doc);
+            return notification is not null;
+        }
+        catch
+        {
+            return false;
         }
     }
 
     public void Dispose()
     {
         _cts?.Dispose();
+        _subscriber?.DisposeAsync();
         _handleLock.Dispose();
     }
 
@@ -418,7 +727,31 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
             }
 
             var emailAddress = emailAddressEl.GetString();
-            var historyId = historyIdEl.GetString();
+            string? historyId;
+
+            if (historyIdEl.ValueKind == JsonValueKind.String)
+            {
+                historyId = historyIdEl.GetString();
+            }
+            else if (historyIdEl.ValueKind == JsonValueKind.Number)
+            {
+                if (historyIdEl.TryGetUInt64(out var historyUlong))
+                {
+                    historyId = historyUlong.ToString();
+                }
+                else if (historyIdEl.TryGetInt64(out var historyLong))
+                {
+                    historyId = historyLong.ToString();
+                }
+                else
+                {
+                    historyId = null;
+                }
+            }
+            else
+            {
+                historyId = null;
+            }
 
             if (string.IsNullOrWhiteSpace(emailAddress))
             {
@@ -438,9 +771,15 @@ public sealed class GmailInboundHostedService : IHostedService, IDisposable
     {
         public static byte[] Decode(string input)
         {
-            var base64 = input.Replace('-', '+').Replace('_', '/');
+            var cleaned = input.Trim()
+                .Replace("\r", string.Empty, StringComparison.Ordinal)
+                .Replace("\n", string.Empty, StringComparison.Ordinal)
+                .Replace(" ", string.Empty, StringComparison.Ordinal);
+
+            var base64 = cleaned.Replace('-', '+').Replace('_', '/');
 
             var pad = base64.Length % 4;
+
             if (pad == 2)
             {
                 base64 += "==";
