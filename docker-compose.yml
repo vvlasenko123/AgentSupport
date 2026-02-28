@@ -182,6 +182,17 @@ services:
     volumes:
       - keycloak_data:/var/lib/postgresql/data
     restart: unless-stopped
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: ml
+    restart: unless-stopped
+    ports:
+      - "6767:6767"
+    environment:
+      - RUBERT_MODEL=cointegrated/rubert-tiny2
+
   smtp_connector:
     build:
       context: .
@@ -195,16 +206,6 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
       - GOOGLE_CLOUD_PROJECT=glass-sylph-488810-k2
 
-  ml:
-    build:
-      context: ./ml
-      dockerfile: Dockerfile
-    container_name: ml-service
-    restart: unless-stopped
-    ports:
-      - "6767:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
 
 volumes:
   postgres_data:

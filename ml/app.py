@@ -1,228 +1,153 @@
-import os
-import re
-import uuid
+# -*- coding: utf-8 -*-
+"""
+API ML-сервиса: на вход — письмо (EmailMessageModel), на выход — ComplaintModel.
+Порт 6767. Бекенд передаёт сюда письмо и получает заполненные поля жалобы.
+"""
+
 from datetime import datetime
-from typing import List, Optional
-from enum import Enum
+from typing import Optional
+from uuid import UUID
 
-import torch
-from fastapi import FastAPI
-from pydantic import BaseModel
-from transformers import BertTokenizer, BertForSequenceClassification
-from docx import Document
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
-app = FastAPI(title="ERIS ML Analysis Service")
+from config import EMPTY_PLACEHOLDER
+from model import ComplaintPredictor
 
-
-# --- 1. ОПРЕДЕЛЕНИЕ КАТЕГОРИЙ (ENUM) ---
-class AppealCategory(str, Enum):
-    MALFUNCTION = "Поломка"
-    REPAIR_SERVICE = "Ремонт"
-    MESSAGE_NOTIFICATION = "Сообщение"
-    INFORMATION_REQUEST = "Запрос информации"
-    CALIBRATION_SETTING = "Калибровка"
-    CONNECTION_INTEGRATION = "Подключение"
-    FEEDBACK_COMPLAINT = "Жалоба"
-    WARRANTY_RETURN = "Возврат"
-    SOFTWARE_UPDATE = "Обновление ПО"
+app = FastAPI(title="AgentSupport ML", description="Парсинг писем и классификация обращений ЭРИС")
+predictor = ComplaintPredictor()
 
 
-# --- НАСТРОЙКИ ПУТЕЙ ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "rubert")
-DATA_PATH = os.path.join(BASE_DIR, "data")
+# ----- Вход: формат с бекенда (C# EmailMessageModel) -----
+class EmailMessageModel(BaseModel):
+    id: Optional[str] = None
+    complaint_id: Optional[str] = Field(None, alias="complaintId")
+    direction: Optional[str] = None
+    external_message_id: Optional[str] = Field(None, alias="externalMessageId")
+    from_email: Optional[str] = Field(None, alias="fromEmail")
+    from_name: Optional[str] = Field(None, alias="fromName")
+    to_email: Optional[str] = Field(None, alias="toEmail")
+    subject: Optional[str] = None
+    content: Optional[str] = None
+    thread_id: Optional[str] = Field(None, alias="threadId")
+    sent_at_utc: Optional[datetime] = Field(None, alias="sentAtUtc")
+    created_at_utc: Optional[datetime] = Field(None, alias="createdAtUtc")
 
-# --- ЗАГРУЗКА МОДЕЛИ ТОНАЛЬНОСТИ ---
-tokenizer = BertTokenizer.from_pretrained(MODEL_PATH)
-model = BertForSequenceClassification.from_pretrained(MODEL_PATH)
-model.eval()
-
-# --- СПРАВОЧНИК ОБОРУДОВАНИЯ ЭРИС ---
-ERIS_MODELS_MAP = {
-    "400": "Корректировочная станция Док ЭРИС-400",
-    "414": "ПГ ЭРИС-414 (портативный многоканальный)",
-    "411": "ПГ ЭРИС-411 (портативный одноканальный)",
-    "230": "ДГС ЭРИС-230 (стационарный с OLED)",
-    "210": "ДГС ЭРИС-210 (стационарный)",
-    "211": "ДГС ЭРИС-210-RF (беспроводной)",
-    "330": "Извещатель пламени ИП-330",
-    "130": "Контроллер СГМ ЭРИС-130",
-    "110": "Контроллер СГМ ЭРИС-110",
-    "412": "ERIS Simple X",
-    "215": "ДГС ЭРИС-ФИД",
-    "700": "ЭРИС Оксициркон",
-    "800": "LoraBOX точка доступа",
-    "advant": "Стационарный газоанализатор Advant"
-}
+    class Config:
+        populate_by_name = True
 
 
-# --- ЛОГИКА БАЗЫ ЗНАНИЙ (RAG) ---
-def load_knowledge_base():
-    kb = []
-    if os.path.exists(DATA_PATH):
-        for file in os.listdir(DATA_PATH):
-            if file.endswith(".docx"):
-                try:
-                    doc = Document(os.path.join(DATA_PATH, file))
-                    for para in doc.paragraphs:
-                        text = para.text.strip()
-                        if len(text) > 20:
-                            kb.append({"source": file, "content": text})
-                except Exception as e:
-                    print(f"Ошибка чтения {file}: {e}")
-    return kb
+# ----- Выход: ComplaintModel (поля для бекенда) -----
+class ComplaintModel(BaseModel):
+    id: Optional[str] = None
+    submission_date: Optional[datetime] = Field(None, alias="submissionDate")
+    fio: str = ""
+    object_name: str = Field("", alias="objectName")
+    phone_number: Optional[str] = Field(None, alias="phoneNumber")
+    email: Optional[str] = None
+    serial_numbers: list[str] = Field(default_factory=list, alias="serialNumbers")
+    device_type: Optional[str] = Field(None, alias="deviceType")
+    emotional_tone: Optional[str] = Field(None, alias="emotionalTone")
+    issue_summary: str = Field("", alias="issueSummary")
+    status: str = "Waiting"
+    category: Optional[str] = None  # AppealCategory для бекенда при необходимости
+
+    class Config:
+        populate_by_name = True
 
 
-KNOWLEDGE_BASE = load_knowledge_base()
+def _object_name_from_email(email: Optional[str]) -> str:
+    if not email or "@" not in email:
+        return EMPTY_PLACEHOLDER
+    name = email.split("@", 1)[-1].strip()
+    return name or EMPTY_PLACEHOLDER
 
 
-# --- МОДЕЛИ ДАННЫХ ---
-class MailRequest(BaseModel):
-    text: str
+@app.post("/process", response_model=ComplaintModel)
+def process_email(email: EmailMessageModel) -> ComplaintModel:
+    """
+    Принимает письмо (EmailMessageModel), возвращает ComplaintModel.
+    Email и SubmissionDate берутся из письма, остальное заполняет модель.
+    """
+    subject = email.subject or ""
+    content = email.content or ""
+    from_name = email.from_name or ""
+    from_email = email.from_email
 
+    try:
+        out = predictor.predict(
+            subject=subject,
+            content=content,
+            from_email=from_email,
+            from_name=from_name,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-class AnalysisResponse(BaseModel):
-    id: str
-    submission_date: str
-    fio: str
-    object_name: str
-    phone_number: str
-    email: str
-    serial_numbers: List[str]
-    device_type: str
-    emotional_tone: str
-    category: str  # <--- ДОБАВЛЕНО ПОЛЕ КАТЕГОРИИ
-    issue_summary: str
-    suggested_answer: str
-
-
-# --- 2. ЛОГИКА ОПРЕДЕЛЕНИЯ КАТЕГОРИИ ---
-def detect_category(text: str) -> str:
-    """Определяет категорию на основе ключевых слов и паттернов."""
-    t = text.lower()
-
-    # Правила маппинга
-    if any(w in t for w in ["не работает", "ошибка", "сломался", "fault", "неисправен", "горит красным"]):
-        return AppealCategory.MALFUNCTION.value
-    if any(w in t for w in ["ремонт", "сервис", "починить", "замена сенсора", "отправить вам"]):
-        return AppealCategory.REPAIR_SERVICE.value
-    if any(w in t for w in ["калибровка", "поверка", "ноль", "чувствительность", "пгс", "баллон"]):
-        return AppealCategory.CALIBRATION_SETTING.value
-    if any(w in t for w in ["связь", "подключение", "modbus", "rs-485", "lora", "интеграция", "шина"]):
-        return AppealCategory.CONNECTION_INTEGRATION.value
-    if any(w in t for w in ["обновление", "прошивка", "firmware", "драйвер", "версия по"]):
-        return AppealCategory.SOFTWARE_UPDATE.value
-    if any(w in t for w in ["возврат", "гарантия", "брак", "некомплект"]):
-        return AppealCategory.WARRANTY_RETURN.value
-    if any(w in t for w in ["подскажите", "сколько", "информация", "паспорт", "рэ", "описание"]):
-        return AppealCategory.INFORMATION_REQUEST.value
-    if any(w in t for w in ["жалоба", "плохо", "недоволен", "претензия"]):
-        return AppealCategory.FEEDBACK_COMPLAINT.value
-    if any(w in t for w in ["спасибо", "благодарим", "принято", "в работе"]):
-        return AppealCategory.MESSAGE_NOTIFICATION.value
-
-    return AppealCategory.INFORMATION_REQUEST.value  # По умолчанию
-
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (extract_entities, create_smart_summary, get_suggested_answer - остаются без изменений) ---
-def extract_entities(text: str):
-    phone = re.search(r'(\+7|8)\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}', text)
-    email = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text)
-    serials = re.findall(r'\b\d{9}\b', text)
-    fio_match = re.search(r'([А-Я][а-я]+)\s([А-Я][а-я]+)\s?([А-Я][а-я]+)?', text)
-
-    device_type = "Оборудование ЭРИС"
-    if serials:
-        prefix = serials[0][:3]
-        device_type = ERIS_MODELS_MAP.get(prefix, device_type)
-    else:
-        for key, name in ERIS_MODELS_MAP.items():
-            if key.lower() in text.lower():
-                device_type = name
-                break
-
-    return (
-        phone.group(0) if phone else "-",
-        email.group(0) if email else "-",
-        serials,
-        fio_match.group(0) if fio_match else "-",
-        device_type
+    submission_date = email.sent_at_utc or email.created_at_utc or datetime.utcnow()
+    return ComplaintModel(
+        id=email.id,
+        submission_date=submission_date,
+        fio=out["fio"],
+        object_name=_object_name_from_email(from_email),
+        phone_number=out["phoneNumber"],
+        email=from_email,
+        serial_numbers=out["serialNumbers"],
+        device_type=out["deviceType"],
+        emotional_tone=out["emotionalTone"],
+        issue_summary=out["issueSummary"],
+        status=out["status"],
+        category=out.get("category"),
     )
 
 
-def create_smart_summary(text: str):
-    clean = re.sub(r'(Добрый день|Здравствуйте|Приветствую|С уважением)[^.!]*[.!]', '', text, flags=re.I)
-    keywords = ["не выходит", "не работает", "ошибка", "сломался", "калибровка", "поверка", "связь"]
-    sentences = [s.strip() for s in clean.split('.') if len(s.strip()) > 10]
-    for s in sentences:
-        if any(k in s.lower() for k in keywords):
-            return s[:250]
-    return sentences[0][:250] if sentences else "Краткая суть не определена"
+# Совместимость с RPC: бекенд может слать MessageId, FromName, FromEmail, Subject, SentAtUtc, Content
+class SimpleEmailRequest(BaseModel):
+    message_id: Optional[str] = Field(None, alias="messageId")
+    from_name: Optional[str] = Field(None, alias="fromName")
+    from_email: Optional[str] = Field(None, alias="fromEmail")
+    subject: Optional[str] = ""
+    sent_at_utc: Optional[datetime] = Field(None, alias="sentAtUtc")
+    content: Optional[str] = ""
+
+    class Config:
+        populate_by_name = True
 
 
-def get_suggested_answer(user_text: str, tone: str):
-    """Ищет подходящий ответ. Если тон положительный - благодарит."""
-    if tone == "положительный":
-        return "Благодарим за ваш отзыв! Мы ценим доверие к оборудованию ЭРИС и всегда готовы помочь в решении технических вопросов."
+@app.post("/process/simple", response_model=ComplaintModel)
+def process_simple_email(req: SimpleEmailRequest) -> ComplaintModel:
+    """Упрощённый контракт (Kafka RPC): messageId, fromName, fromEmail, subject, sentAtUtc, content."""
+    try:
+        out = predictor.predict(
+            subject=req.subject or "",
+            content=req.content or "",
+            from_email=req.from_email,
+            from_name=req.from_name or "",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if not KNOWLEDGE_BASE:
-        return "Инструкции не найдены в базе (проверьте папку data)."
-
-    corpus = [user_text] + [item['content'] for item in KNOWLEDGE_BASE]
-    vectorizer = TfidfVectorizer().fit_transform(corpus)
-    vectors = vectorizer.toarray()
-    cosine_sim = cosine_similarity([vectors[0]], vectors[1:])[0]
-    best_idx = cosine_sim.argmax()
-
-    if cosine_sim[best_idx] > 0.15:
-        return KNOWLEDGE_BASE[best_idx]['content']
-
-    return "Информации по данному случаю в базе знаний нет. Обращение передано техническому специалисту."
-
-
-# --- ЭНДПОИНТЫ ---
-
-@app.post("/analyze_mail", response_model=AnalysisResponse)
-async def analyze_mail(request: MailRequest):
-    text = request.text
-
-    # 1. Анализ тональности (BERT)
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    tone_id = outputs.logits.argmax(-1).item()
-    tones = {0: "нейтральный", 1: "положительный", 2: "негативный"}
-    current_tone = tones.get(tone_id, "нейтральный")
-
-    # 2. Определение категории (Enum логика)
-    current_category = detect_category(text)
-
-    # 3. Извлечение сущностей
-    phone, email, serials, fio, device = extract_entities(text)
-
-    # 4. Генерация саммари и поиск ответа
-    summary = create_smart_summary(text)
-    answer = get_suggested_answer(text, current_tone)
-
-    return AnalysisResponse(
-        id=str(uuid.uuid4()),
-        submission_date=datetime.now().isoformat(),
-        fio=fio,
-        object_name="Обращение по газоанализаторам",
-        phone_number=phone,
-        email=email,
-        serial_numbers=serials,
-        device_type=device,
-        emotional_tone=current_tone,
-        category=current_category,  # <--- ОТПРАВЛЯЕМ КАТЕГОРИЮ
-        issue_summary=summary,
-        suggested_answer=answer
+    submission = req.sent_at_utc or datetime.utcnow()
+    return ComplaintModel(
+        submission_date=submission,
+        fio=out["fio"],
+        object_name=_object_name_from_email(req.from_email),
+        phone_number=out["phoneNumber"],
+        email=req.from_email,
+        serial_numbers=out["serialNumbers"],
+        device_type=out["deviceType"],
+        emotional_tone=out["emotionalTone"],
+        issue_summary=out["issueSummary"],
+        status=out["status"],
+        category=out.get("category"),
     )
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=6767)

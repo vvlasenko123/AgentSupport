@@ -1,134 +1,118 @@
+# -*- coding: utf-8 -*-
+"""
+Дообучение RuBERT на train_data.json (и данных из data/) для:
+- тональности (0/1/2 -> Нейтральный/Положительный/Негативный),
+- категории обращения (APPEAL_CATEGORIES),
+- эмбеддинги текста для поиска ближайшего issue_summary.
+"""
+
 import json
 import os
-import shutil
 import torch
+from torch.utils.data import Dataset
+from transformers import AutoTokenizer, AutoModel, AutoConfig
 import numpy as np
-from sklearn.model_selection import train_test_split
-from transformers import (
-    BertTokenizer,
-    BertForSequenceClassification,
-    Trainer,
-    TrainingArguments,
-    BertConfig
-)
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import LabelEncoder
 
-# --- 1. КОНФИГУРАЦИЯ ---
-CATEGORY_MAP = {
-    "MALFUNCTION": 0,
-    "REPAIR_SERVICE": 1,
-    "MESSAGE_NOTIFICATION": 2,
-    "INFORMATION_REQUEST": 3,
-    "CALIBRATION_SETTING": 4,
-    "CONNECTION_INTEGRATION": 5,
-    "FEEDBACK_COMPLAINT": 6,
-    "WARRANTY_RETURN": 7,
-    "SOFTWARE_UPDATE": 8
-}
+from config import RUBERT_MODEL, MODELS_DIR, EMOTIONAL_TONE_MAP, APPEAL_CATEGORIES
+from preprocess import load_train_data, prepare_records
 
-ID_TO_CATEGORY = {v: k for k, v in CATEGORY_MAP.items()}
-
-MODEL_NAME = "cointegrated/rubert-tiny2"
-SAVE_PATH = "./rubert"
-DATA_FILE = "train_data.json"
-EPOCHS = 15
-BATCH_SIZE = 8  # Уменьши до 4, если мало оперативной памяти
-MAX_LENGTH = 512
+os.makedirs(MODELS_DIR, exist_ok=True)
 
 
-class ErisDataset(torch.utils.data.Dataset):
-    def __init__(self, encodings, labels):
-        self.encodings = encodings
-        self.labels = labels
-
-    def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['labels'] = torch.tensor(self.labels[idx])
-        return item
+class TextDataset(Dataset):
+    def __init__(self, texts, tokenizer, max_length=256):
+        self.texts = texts
+        self.tokenizer = tokenizer
+        self.max_length = max_length
 
     def __len__(self):
-        return len(self.labels)
+        return len(self.texts)
+
+    def __getitem__(self, i):
+        enc = self.tokenizer(
+            self.texts[i],
+            max_length=self.max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        return {k: v.squeeze(0) for k, v in enc.items()}
 
 
-def train():
-    print(f"🚀 Запуск профессионального переобучения...")
-    print(f"📊 Категорий: {len(CATEGORY_MAP)}, Эпох: {EPOCHS}")
+def get_embeddings(model, tokenizer, texts, device, batch_size=8, max_length=256):
+    """Получить [CLS] эмбеддинги для списка текстов."""
+    model.eval()
+    all_emb = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        enc = tokenizer(
+            batch,
+            max_length=max_length,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        ).to(device)
+        with torch.no_grad():
+            out = model(**enc)
+            cls = out.last_hidden_state[:, 0, :].cpu().numpy()
+        all_emb.append(cls)
+    return np.vstack(all_emb)
 
-    if not os.path.exists(DATA_FILE):
-        print(f"❌ Ошибка: Файл {DATA_FILE} не найден!")
-        return
 
-    # 2. Загрузка данных
-    with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        raw_data = json.load(f)
+def main():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
 
-    texts = []
-    labels = []
-    for item in raw_data:
-        cat_name = item.get("category")
-        if cat_name in CATEGORY_MAP:
-            texts.append(item["text"])
-            labels.append(CATEGORY_MAP[cat_name])
+    records = load_train_data()
+    records = prepare_records(records)
+    if not records:
+        raise SystemExit("Нет данных для обучения. Проверьте train_data.json и data/.")
 
-    print(f"✅ Загружено примеров: {len(texts)}")
+    texts = [r["text"] for r in records]
+    labels_sentiment = [r["label"] for r in records]
+    categories = [r["category"] for r in records]
+    issue_summaries = [r["issue_summary"] for r in records]
 
-    # Разделение на обучение и валидацию
-    train_texts, val_texts, train_labels, val_labels = train_test_split(
-        texts, labels, test_size=0.15, random_state=42, stratify=labels
-    )
+    print(f"Загружаем {RUBERT_MODEL}...")
+    tokenizer = AutoTokenizer.from_pretrained(RUBERT_MODEL)
+    config = AutoConfig.from_pretrained(RUBERT_MODEL)
+    model = AutoModel.from_pretrained(RUBERT_MODEL, config=config).to(device)
 
-    # 3. Подготовка модели и токенайзера
-    tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
+    print("Считаем эмбеддинги...")
+    emb = get_embeddings(model, tokenizer, texts, device)
 
-    # Чтобы избежать ошибок несовпадающих слоев, принудительно задаем конфиг
-    config = BertConfig.from_pretrained(MODEL_NAME, num_labels=len(CATEGORY_MAP))
-    model = BertForSequenceClassification.from_pretrained(MODEL_NAME, config=config)
+    # Сохраняем эмбеддинги и эталоны для issue_summary (nearest neighbor)
+    np.save(os.path.join(MODELS_DIR, "train_embeddings.npy"), emb)
+    with open(os.path.join(MODELS_DIR, "train_issue_summaries.json"), "w", encoding="utf-8") as f:
+        json.dump(issue_summaries, f, ensure_ascii=False)
+    with open(os.path.join(MODELS_DIR, "train_texts.json"), "w", encoding="utf-8") as f:
+        json.dump(texts, f, ensure_ascii=False)
 
-    train_encodings = tokenizer(train_texts, truncation=True, padding=True, max_length=MAX_LENGTH)
-    val_encodings = tokenizer(val_texts, truncation=True, padding=True, max_length=MAX_LENGTH)
+    # Классификатор тональности
+    le_sent = LabelEncoder()
+    y_sent = le_sent.fit_transform(labels_sentiment)  # 0,1,2
+    clf_sent = LogisticRegression(max_iter=500, random_state=42)
+    clf_sent.fit(emb, y_sent)
+    np.save(os.path.join(MODELS_DIR, "label_encoder_sentiment.npy"), le_sent.classes_)
+    import joblib
+    joblib.dump(clf_sent, os.path.join(MODELS_DIR, "sentiment_classifier.joblib"))
 
-    train_dataset = ErisDataset(train_encodings, train_labels)
-    val_dataset = ErisDataset(val_encodings, val_labels)
+    # Классификатор категории
+    le_cat = LabelEncoder()
+    y_cat = le_cat.fit_transform(categories)
+    clf_cat = LogisticRegression(max_iter=500, random_state=42)
+    clf_cat.fit(emb, y_cat)
+    np.save(os.path.join(MODELS_DIR, "label_encoder_category.npy"), le_cat.classes_)
+    joblib.dump(clf_cat, os.path.join(MODELS_DIR, "category_classifier.joblib"))
 
-    # 4. Настройка гиперпараметров (TrainingArguments)
-    training_args = TrainingArguments(
-        output_dir='./results',
-        num_train_epochs=EPOCHS,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
-        learning_rate=5e-5,  # Чуть выше для маленькой модели
-        warmup_steps=50,  # Плавный вход в обучение
-        weight_decay=0.01,  # Регуляризация
-        logging_dir='./logs',
-        logging_steps=10,
-        evaluation_strategy="epoch",  # Проверка каждую эпоху
-        save_strategy="no",  # Не плодим промежуточные чекпоинты (экономим место)
-        load_best_model_at_end=False,  # Нам важен прогресс всех 15 эпох
-        report_to="none"
-    )
+    # Сохраняем токенайзер и модель для инференса
+    tokenizer.save_pretrained(MODELS_DIR)
+    model.save_pretrained(MODELS_DIR)
 
-    # 5. Запуск процесса
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset
-    )
-
-    print("🛠 Начинаю циклы обучения...")
-    trainer.train()
-
-    # 6. Финальное сохранение
-    if os.path.exists(SAVE_PATH):
-        shutil.rmtree(SAVE_PATH)  # Очищаем старую папку перед сохранением
-
-    model.save_pretrained(SAVE_PATH)
-    tokenizer.save_pretrained(SAVE_PATH)
-
-    with open(os.path.join(SAVE_PATH, "category_mapping.json"), "w") as f:
-        json.dump(ID_TO_CATEGORY, f, ensure_ascii=False, indent=4)
-
-    print(f"✨ Бинго! Модель обучена на 15 эпох и сохранена в {SAVE_PATH}")
+    print("Готово. Модели сохранены в", MODELS_DIR)
 
 
 if __name__ == "__main__":
-    train()
+    main()

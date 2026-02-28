@@ -1,26 +1,67 @@
-# preprocess.py
-import re
+# -*- coding: utf-8 -*-
+"""Загрузка и подготовка данных для обучения."""
 
-def extract_device_type_and_serial(text):
-    # Извлекаем тип устройства и заводской номер (9 цифр)
-    device_type_match = re.search(r'\b(\d{3})\d{6}\b', text)
-    if device_type_match:
-        device_type = device_type_match.group(1)
-        serial_number = device_type_match.group(0)
-    else:
-        device_type = "Неизвестно"
-        serial_number = None
-    return device_type, serial_number
+import json
+import os
+from pathlib import Path
 
-def detect_emotional_tone(text):
-    # Простой анализ эмоционального окраса
-    if "переживаю" in text or "волнуются" in text:
-        return "негативный"
-    elif "счастлив" in text or "доволен" in text:
-        return "позитивный"
-    return "нейтральный"
+from config import APPEAL_CATEGORIES, TRAIN_DATA_JSON, DATA_DIR, DEVICES_LIST_PATH
 
-def preprocess_data(text):
-    # Преобразование текста в токены для RuBERT
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
-    return inputs
+
+def load_train_data():
+    """Загружает train_data.json и опционально файлы из data/."""
+    records = []
+    if os.path.isfile(TRAIN_DATA_JSON):
+        with open(TRAIN_DATA_JSON, "r", encoding="utf-8") as f:
+            records = json.load(f)
+    if os.path.isdir(DATA_DIR):
+        for p in Path(DATA_DIR).glob("*.json"):
+            if p.name == "train_data.json":
+                continue
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    records.extend(data)
+                else:
+                    records.append(data)
+            except Exception:
+                pass
+    return records
+
+
+def load_devices_list():
+    """Загружает список устройств из data/devices.txt."""
+    devices = []
+    if os.path.isfile(DEVICES_LIST_PATH):
+        with open(DEVICES_LIST_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    devices.append(line)
+    # Дублируем без "ЭРИС " для матчинга
+    return sorted(set(devices), key=len, reverse=True)  # длинные первыми для матча
+
+
+def prepare_records(records):
+    """Приводит записи к единому формату: text, label, category, issue_summary."""
+    out = []
+    cat_set = set(APPEAL_CATEGORIES)
+    for r in records:
+        text = (r.get("text") or "").strip()
+        if not text:
+            continue
+        label = r.get("label", 0)
+        if label not in (0, 1, 2):
+            label = 0
+        category = (r.get("category") or "").strip()
+        if category not in cat_set:
+            continue
+        issue_summary = (r.get("issue_summary") or "").strip() or text[:200]
+        out.append({
+            "text": text,
+            "label": label,
+            "category": category,
+            "issue_summary": issue_summary,
+        })
+    return out
