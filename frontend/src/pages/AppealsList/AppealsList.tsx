@@ -121,7 +121,7 @@ function AppealsList() {
 
     const csv = Papa.unparse(data);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, "appeals.csv");
+    saveAs(blob, "Обращения.csv");
   };
 
   // Функция для экспорта в XLSX
@@ -148,7 +148,7 @@ function AppealsList() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Обращения");
 
-    XLSX.writeFile(wb, "appeals.xlsx");
+    XLSX.writeFile(wb, "Обращения.xlsx");
   };
 
   return (
