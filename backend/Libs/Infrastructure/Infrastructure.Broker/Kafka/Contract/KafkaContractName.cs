@@ -3,7 +3,7 @@ namespace Infrastructure.Broker.Kafka.Contract;
 /// <summary>
 /// Контракт по имени
 /// </summary>
-internal static class KafkaContractName
+public static class KafkaContractName
 {
     /// <summary>
     /// Получение имение контракта request/response

@@ -1,4 +1,5 @@
 ﻿import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { refreshAccessToken } from "./auth";
 
 const normalizeBaseUrl = (url: string) => (url.endsWith("/") ? url : `${url}/`);
 
@@ -18,31 +19,9 @@ export const axiosInstance = axios.create({
   },
 });
 
-// Keep default export compatibility for legacy imports.
 export default axiosInstance;
 
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-}> = [];
-
-const processQueue = (error: unknown, token?: string) => {
-  failedQueue.forEach((prom) => {
-    if (error) prom.reject(error);
-    else if (token) prom.resolve(token);
-  });
-  failedQueue = [];
-};
-
-const clearAuth = () => {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-  localStorage.removeItem("user_role");
-  localStorage.removeItem("user_id");
-  localStorage.removeItem("user_name");
-  window.dispatchEvent(new Event("agent-auth-changed"));
-};
+let refreshPromise: Promise<string | null> | null = null;
 
 axiosInstance.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
@@ -56,59 +35,29 @@ axiosInstance.interceptors.request.use((config) => {
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const status = error.response?.status;
     const originalRequest = (error.config || {}) as RetryRequestConfig;
 
-    if (status !== 401) return Promise.reject(error);
-
-    const refreshToken = localStorage.getItem("refresh_token");
-    const isRefreshCall =
-      typeof originalRequest.url === "string" && originalRequest.url.includes("auth/refresh/");
-
-    if (!refreshToken || isRefreshCall || originalRequest._retry) {
-      clearAuth();
+    if (error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(error);
     }
 
     originalRequest._retry = true;
 
-    if (isRefreshing) {
-      return new Promise((resolve, reject) => {
-        failedQueue.push({
-          resolve: (newToken: string) => {
-            originalRequest.headers = originalRequest.headers ?? {};
-            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            resolve(axiosInstance(originalRequest));
-          },
-          reject,
-        });
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = null;
       });
     }
 
-    isRefreshing = true;
+    const newToken = await refreshPromise;
 
-    try {
-      const refreshRes = await axios.post(`${API_BASE_URL}auth/refresh/`, { refresh: refreshToken });
-      const newAccess = (refreshRes.data as { access?: string })?.access;
-
-      if (!newAccess) {
-        throw new Error("Missing access token in refresh response");
-      }
-
-      localStorage.setItem("access_token", newAccess);
-      axiosInstance.defaults.headers.common.Authorization = `Bearer ${newAccess}`;
-      processQueue(null, newAccess);
-
-      originalRequest.headers = originalRequest.headers ?? {};
-      originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-
-      return axiosInstance(originalRequest);
-    } catch (refreshError) {
-      processQueue(refreshError);
-      clearAuth();
-      return Promise.reject(refreshError);
-    } finally {
-      isRefreshing = false;
+    if (!newToken) {
+      return Promise.reject(error);
     }
+
+    originalRequest.headers = originalRequest.headers ?? {};
+    originalRequest.headers.Authorization = `Bearer ${newToken}`;
+
+    return axiosInstance(originalRequest);
   },
 );

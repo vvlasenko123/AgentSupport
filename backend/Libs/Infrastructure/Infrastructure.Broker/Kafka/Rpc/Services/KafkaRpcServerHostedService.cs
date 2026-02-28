@@ -3,61 +3,73 @@ using Confluent.Kafka;
 using Infrastructure.Broker.Kafka.Rpc.Envelope;
 using Infrastructure.Broker.Kafka.Rpc.Handler.Interfaces;
 using Infrastructure.Broker.Options;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Broker.Kafka.Rpc.Services;
 
-/// <summary>
-/// Kafka RPC server
-/// </summary>
 public sealed class KafkaRpcServerHostedService : BackgroundService
 {
-    private static readonly TimeSpan KafkaWaitDelay = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan KafkaWaitLogInterval = TimeSpan.FromSeconds(30);
-
     private readonly KafkaOptions _options;
     private readonly ILogger<KafkaRpcServerHostedService> _logger;
-    private readonly IReadOnlyDictionary<string, IKafkaRpcHandler> _handlers;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly string[] _contracts;
 
     public KafkaRpcServerHostedService(
         IOptions<KafkaOptions> options,
-        IEnumerable<IKafkaRpcHandler> handlers,
+        IServiceScopeFactory scopeFactory,
         ILogger<KafkaRpcServerHostedService> logger)
     {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
         _options = options.Value;
-        _logger = logger;
-        _handlers = handlers.ToDictionary(x => x.Contract, StringComparer.Ordinal);
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         };
-    }
 
-    /// <inheritdoc />
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        return RunAsync(stoppingToken);
-    }
-
-    private async Task RunAsync(CancellationToken stoppingToken)
-    {
-        var topics = _handlers.Keys.ToArray();
-
-        if (topics.Length == 0)
+        if (string.IsNullOrWhiteSpace(_options.BootstrapServers))
         {
-            _logger.LogWarning("Обработчики Kafka RPC не зарегистрированы. Kafka RPC server не будет запущен");
-            return;
+            throw new InvalidOperationException("Не задан KafkaOptions.BootstrapServers");
         }
 
-        await WaitKafkaReadyAsync(stoppingToken);
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var handlers = scope.ServiceProvider.GetServices<IKafkaRpcHandler>().ToArray();
 
+            if (handlers.Length == 0)
+            {
+                throw new InvalidOperationException("Не зарегистрированы IKafkaRpcHandler");
+            }
+
+            _contracts = handlers
+                .Select(x => x.Contract)
+                .Where(x => string.IsNullOrWhiteSpace(x) is false)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        if (_contracts.Length == 0)
+        {
+            throw new InvalidOperationException("Не зарегистрированы IKafkaRpcHandler");
+        }
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         var consumerConfig = new ConsumerConfig
         {
             BootstrapServers = _options.BootstrapServers,
-            GroupId = $"rpc-server-{Environment.MachineName}",
+            GroupId = "rpc-server",
             AutoOffsetReset = AutoOffsetReset.Earliest,
             EnableAutoCommit = false,
         };
@@ -67,183 +79,116 @@ public sealed class KafkaRpcServerHostedService : BackgroundService
             BootstrapServers = _options.BootstrapServers,
         };
 
-        using var consumer = new ConsumerBuilder<string, string>(consumerConfig)
-            .SetLogHandler((_, _) => { })
-            .SetErrorHandler((_, _) => { })
-            .Build();
+        using var consumer = new ConsumerBuilder<string, string>(consumerConfig).Build();
+        using var producer = new ProducerBuilder<string, string>(producerConfig).Build();
 
-        using var producer = new ProducerBuilder<string, string>(producerConfig)
-            .SetLogHandler((_, _) => { })
-            .SetErrorHandler((_, _) => { })
-            .Build();
+        consumer.Subscribe(_contracts);
 
-        consumer.Subscribe(topics);
-
-        _logger.LogInformation("Kafka RPC server запущен. Topics: {Topics}", string.Join(", ", topics));
+        _logger.LogInformation("Kafka RPC server запущен. Топики: {Topics}", string.Join(", ", _contracts));
 
         while (stoppingToken.IsCancellationRequested is false)
         {
+            ConsumeResult<string, string>? cr = null;
+
             try
             {
-                var result = consumer.Consume(stoppingToken);
+                cr = consumer.Consume(TimeSpan.FromMilliseconds(500));
 
-                if (result?.Message?.Value is null)
+                if (cr?.Message?.Value is null)
                 {
                     continue;
                 }
 
-                var requestEnvelope = JsonSerializer.Deserialize<KafkaRpcRequestEnvelope>(result.Message.Value, _jsonOptions);
+                var requestEnvelope = JsonSerializer.Deserialize<KafkaRpcRequestEnvelope>(cr.Message.Value, _jsonOptions);
 
                 if (requestEnvelope is null)
                 {
-                    consumer.Commit(result);
+                    consumer.Commit(cr);
                     continue;
                 }
 
-                var responseEnvelope = await HandleAsync(requestEnvelope, stoppingToken);
+                using var scope = _scopeFactory.CreateScope();
+
+                var handler = scope.ServiceProvider
+                    .GetServices<IKafkaRpcHandler>()
+                    .FirstOrDefault(x => string.Equals(x.Contract, requestEnvelope.Contract, StringComparison.Ordinal));
+
+                if (handler is null)
+                {
+                    await ProduceErrorAsync(producer, requestEnvelope, "Не найден обработчик для контракта", stoppingToken);
+                    consumer.Commit(cr);
+                    continue;
+                }
+
+                var responsePayloadJson = await handler.HandleAsync(requestEnvelope.Payload, stoppingToken);
+
+                var responseEnvelope = new KafkaRpcResponseEnvelope
+                {
+                    CorrelationId = requestEnvelope.CorrelationId,
+                    Contract = requestEnvelope.ResponseContract,
+                    IsSuccess = true,
+                    Payload = responsePayloadJson,
+                };
 
                 var responseJson = JsonSerializer.Serialize(responseEnvelope, _jsonOptions);
-
-                if (string.IsNullOrWhiteSpace(requestEnvelope.ReplyToTopic))
-                {
-                    throw new InvalidOperationException("В RPC-запросе не задан ReplyToTopic");
-                }
 
                 await producer.ProduceAsync(
                     requestEnvelope.ReplyToTopic,
                     new Message<string, string>
                     {
                         Key = requestEnvelope.CorrelationId,
-                        Value = responseJson,
+                        Value = responseJson
                     },
                     stoppingToken);
 
-                consumer.Commit(result);
+                consumer.Commit(cr);
             }
             catch (OperationCanceledException)
             {
                 break;
             }
-            catch (ConsumeException ex)
-            {
-                _logger.LogError(ex, "Ошибка чтения RPC-запроса из Kafka");
-                await WaitKafkaReadyAsync(stoppingToken);
-            }
-            catch (KafkaException ex)
-            {
-                _logger.LogError(ex, "Ошибка Kafka RPC server");
-                await WaitKafkaReadyAsync(stoppingToken);
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Неожиданная ошибка в Kafka RPC server");
-            }
-        }
+                _logger.LogError(ex, "Ошибка обработки Kafka RPC сообщения");
 
-        consumer.Close();
-
-        _logger.LogInformation("Kafka RPC server остановлен");
-    }
-
-    /// <summary>
-    /// Ждет доступности Kafka
-    /// </summary>
-    private async Task WaitKafkaReadyAsync(CancellationToken cancellationToken)
-    {
-        var lastLogAt = DateTime.MinValue;
-
-        while (cancellationToken.IsCancellationRequested is false)
-        {
-            try
-            {
-                var config = new AdminClientConfig
+                if (cr is not null)
                 {
-                    BootstrapServers = _options.BootstrapServers,
-                };
-
-                using var admin = new AdminClientBuilder(config)
-                    .SetLogHandler((_, _) => { })
-                    .SetErrorHandler((_, _) => { })
-                    .Build();
-
-                _ = admin.GetMetadata(TimeSpan.FromSeconds(3));
-
-                return;
-            }
-            catch (Exception)
-            {
-                if (DateTime.UtcNow - lastLogAt >= KafkaWaitLogInterval)
-                {
-                    _logger.LogWarning("Kafka недоступна. Ожидание подключения к {BootstrapServers}", _options.BootstrapServers);
-                    lastLogAt = DateTime.UtcNow;
+                    try
+                    {
+                        consumer.Commit(cr);
+                    }
+                    catch
+                    {
+                    }
                 }
-
-                await Task.Delay(KafkaWaitDelay, cancellationToken);
             }
         }
     }
 
-    /// <summary>
-    /// Обрабатывает один RPC-запрос и формирует envelope ответа
-    /// </summary>
-    private async Task<KafkaRpcResponseEnvelope> HandleAsync(KafkaRpcRequestEnvelope requestEnvelope, CancellationToken cancellationToken)
+    private async Task ProduceErrorAsync(
+        IProducer<string, string> producer,
+        KafkaRpcRequestEnvelope request,
+        string error,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(requestEnvelope.CorrelationId))
+        var responseEnvelope = new KafkaRpcResponseEnvelope
         {
-            return new KafkaRpcResponseEnvelope
-            {
-                CorrelationId = string.Empty,
-                Contract = string.Empty,
-                IsSuccess = false,
-                Error = "Не задан CorrelationId",
-            };
-        }
+            CorrelationId = request.CorrelationId,
+            Contract = request.ResponseContract,
+            IsSuccess = false,
+            Error = error,
+            Payload = string.Empty,
+        };
 
-        if (string.IsNullOrWhiteSpace(requestEnvelope.Contract))
-        {
-            return new KafkaRpcResponseEnvelope
-            {
-                CorrelationId = requestEnvelope.CorrelationId,
-                Contract = string.Empty,
-                IsSuccess = false,
-                Error = "Не задан контракт запроса",
-            };
-        }
+        var responseJson = JsonSerializer.Serialize(responseEnvelope, _jsonOptions);
 
-        if (_handlers.TryGetValue(requestEnvelope.Contract, out var handler) is false)
-        {
-            return new KafkaRpcResponseEnvelope
+        await producer.ProduceAsync(
+            request.ReplyToTopic,
+            new Message<string, string>
             {
-                CorrelationId = requestEnvelope.CorrelationId,
-                Contract = requestEnvelope.ResponseContract,
-                IsSuccess = false,
-                Error = $"Обработчик для контракта '{requestEnvelope.Contract}' не найден",
-            };
-        }
-
-        try
-        {
-            var payload = await handler.HandleAsync(requestEnvelope.Payload, cancellationToken);
-
-            return new KafkaRpcResponseEnvelope
-            {
-                CorrelationId = requestEnvelope.CorrelationId,
-                Contract = requestEnvelope.ResponseContract,
-                IsSuccess = true,
-                Payload = payload,
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Ошибка обработки RPC-запроса. Contract: {Contract}", requestEnvelope.Contract);
-
-            return new KafkaRpcResponseEnvelope
-            {
-                CorrelationId = requestEnvelope.CorrelationId,
-                Contract = requestEnvelope.ResponseContract,
-                IsSuccess = false,
-                Error = "Ошибка обработки RPC-запроса",
-            };
-        }
+                Key = request.CorrelationId,
+                Value = responseJson
+            },
+            cancellationToken);
     }
 }

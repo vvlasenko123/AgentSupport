@@ -2,6 +2,9 @@
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { appealsApi } from "../../utils/appealsApi";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
 import type { AppealListItem, SortOrder } from "../../types/appeal";
 import "./AppealsList.scss";
 
@@ -9,6 +12,9 @@ function AppealsList() {
   const [appeals, setAppeals] = useState<AppealListItem[]>([]);
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("default");
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,11 +73,96 @@ function AppealsList() {
     });
   };
 
+  const currentAppeals = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredAndSortedAppeals.slice(startIndex, endIndex);
+  }, [filteredAndSortedAppeals, currentPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedAppeals.length / itemsPerPage);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const renderPagination = () => (
+    <div className="pagination">
+      <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
+        {"<"}
+      </button>
+      <span>{`${currentPage} из ${totalPages}`}</span>
+      <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
+        {">"}
+      </button>
+    </div>
+  );
+
+  // Функция для экспорта в CSV
+  const exportToCSV = async () => {
+    const data = await Promise.all(
+      appeals.map(async (appeal) => {
+        const fullDetails = await appealsApi.getAppealById(appeal.id);
+        return {
+          "Номер": appeal.id,
+          "Дата": fullDetails.date,
+          "ФИО": fullDetails.fullName,
+          "Объект": fullDetails.objectName,
+          "Телефон": fullDetails.phone,
+          "Email": fullDetails.email,
+          "Заводские номера": fullDetails.serialNumbers,
+          "Тип приборов": fullDetails.deviceType,
+          "Эмоциональный окрас": fullDetails.emotionalTone,
+          "Суть вопроса": fullDetails.issueSummary,
+        };
+      })
+    );
+
+    const csv = Papa.unparse(data);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "Обращения.csv");
+  };
+
+  // Функция для экспорта в XLSX
+  const exportToXLSX = async () => {
+    const data = await Promise.all(
+      appeals.map(async (appeal) => {
+        const fullDetails = await appealsApi.getAppealById(appeal.id);
+        return {
+          "Номер": appeal.id,
+          "Дата": fullDetails.date,
+          "ФИО": fullDetails.fullName,
+          "Объект": fullDetails.objectName,
+          "Телефон": fullDetails.phone,
+          "Email": fullDetails.email,
+          "Заводские номера": fullDetails.serialNumbers,
+          "Тип приборов": fullDetails.deviceType,
+          "Эмоциональный окрас": fullDetails.emotionalTone,
+          "Суть вопроса": fullDetails.issueSummary,
+        };
+      })
+    );
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Обращения");
+
+    XLSX.writeFile(wb, "Обращения.xlsx");
+  };
+
   return (
     <section className="appeals-list-page">
-      <div className="appeals-list-page__head">
-        <h1 className="appeals-list-page__title">Обращения</h1>
-        <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
+      <div className="appeals-list-page__head appeals-list">
+        <div>
+          <h1 className="appeals-list-page__title">Обращения</h1>
+          <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
+        </div>
+
+        <div className="export-buttons">
+          <button onClick={exportToCSV}>Выгрузить в CSV</button>
+          <button onClick={exportToXLSX}>Выгрузить в XLSX</button>
+        </div>
       </div>
 
       <div className="appeals-search">
@@ -98,14 +189,15 @@ function AppealsList() {
               {sortOrder === "desc" && <span className="sort-arrow">↓</span>}
               {sortOrder === "asc" && <span className="sort-arrow">↑</span>}
             </span>
+            <span className="col-title">Статус</span>
           </div>
 
           <ul className="appeals-list">
-            {filteredAndSortedAppeals.length === 0 && (
+            {currentAppeals.length === 0 && (
               <li className="appeals-list__empty">По вашему запросу ничего не найдено.</li>
             )}
 
-            {filteredAndSortedAppeals.map((appeal, index) => (
+            {currentAppeals.map((appeal, index) => (
               <li
                 className="appeals-list__item"
                 key={appeal.id}
@@ -117,10 +209,13 @@ function AppealsList() {
                   </span>
                   <span className="appeals-card__title">{appeal.title}</span>
                   <span className="appeals-card__date">{appeal.date}</span>
+                  <span className="appeals-card__status">{appeal.status}</span>
                 </Link>
               </li>
             ))}
           </ul>
+
+          {renderPagination()}
         </div>
       )}
     </section>

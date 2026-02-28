@@ -1,46 +1,103 @@
-﻿import { axiosInstance } from "./axiosInstance";
+﻿import axios from "axios";
+import { jwtDecode } from "jwt-decode";
 
-export type TelegramAuthPayload = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
+export type LoginCredentials = {
+  username: string;
+  password: string;
 };
 
-type AuthUser = {
-  id: string | number;
-  role?: string;
-  first_name?: string;
-  username?: string;
+type TokenResponse = {
+  access_token: string;
+  refresh_token?: string;
+  token_type: string;
+  expires_in: number;
 };
 
-type TgAuthResponse = {
-  access?: string;
-  refresh?: string;
-  user?: AuthUser;
+type JwtPayload = {
+  exp?: number;
 };
 
-const TG_LOGIN_ENDPOINT = import.meta.env.VITE_TG_LOGIN_ENDPOINT || "auth/login/";
+const AUTH_TOKEN_URL =
+  import.meta.env.VITE_AUTH_TOKEN_URL || "/realms/master/protocol/openid-connect/token";
+const AUTH_CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || "admin-cli";
 
-export async function loginWithTelegram(payload: TelegramAuthPayload) {
-  const { data } = await axiosInstance.post<TgAuthResponse>(TG_LOGIN_ENDPOINT, payload);
+const clearStoredAuth = () => {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user_name");
+};
 
-  if (data.access) localStorage.setItem("access_token", data.access);
-  if (data.refresh) localStorage.setItem("refresh_token", data.refresh);
+export async function loginWithPassword(credentials: LoginCredentials) {
+  const params = new URLSearchParams({
+    grant_type: "password",
+    client_id: AUTH_CLIENT_ID,
+    username: credentials.username,
+    password: credentials.password,
+  });
 
-  if (data.user) {
-    localStorage.setItem("user_id", String(data.user.id));
-    if (data.user.role) localStorage.setItem("user_role", data.user.role);
+  const { data } = await axios.post<TokenResponse>(AUTH_TOKEN_URL, params, {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  });
 
-    const displayName =
-      (data.user.first_name && data.user.first_name.trim()) || data.user.username || "Пользователь";
-
-    localStorage.setItem("user_name", displayName);
+  localStorage.setItem("access_token", data.access_token);
+  if (data.refresh_token) {
+    localStorage.setItem("refresh_token", data.refresh_token);
   }
+  localStorage.setItem("user_name", credentials.username);
 
   window.dispatchEvent(new Event("agent-auth-changed"));
   return data;
+}
+
+export function isTokenExpired(token: string) {
+  try {
+    const payload = jwtDecode<JwtPayload>(token);
+    if (!payload.exp) return true;
+    return Date.now() >= payload.exp * 1000;
+  } catch {
+    return true;
+  }
+}
+
+export async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem("refresh_token");
+  if (!refreshToken) return null;
+
+  const params = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: AUTH_CLIENT_ID,
+    refresh_token: refreshToken,
+  });
+
+  try {
+    const { data } = await axios.post<TokenResponse>(AUTH_TOKEN_URL, params, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    });
+
+    localStorage.setItem("access_token", data.access_token);
+    if (data.refresh_token) {
+      localStorage.setItem("refresh_token", data.refresh_token);
+    }
+    window.dispatchEvent(new Event("agent-auth-changed"));
+    return data.access_token;
+  } catch {
+    clearStoredAuth();
+    window.dispatchEvent(new Event("agent-auth-changed"));
+    return null;
+  }
+}
+
+export function logout() {
+  clearStoredAuth();
+  window.dispatchEvent(new Event("agent-auth-changed"));
+}
+
+export function isAuthorized() {
+  const token = localStorage.getItem("access_token");
+  if (!token) return false;
+  return !isTokenExpired(token);
 }

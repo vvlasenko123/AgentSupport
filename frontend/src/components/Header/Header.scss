@@ -54,18 +54,10 @@
   color: #0e4a7b;
   font-weight: 700;
   text-decoration: none;
-  transition:
-    background-color 0.22s ease,
-    color 0.22s ease,
-    transform 0.22s ease,
-    box-shadow 0.22s ease;
+  transition: background-color 0.22s ease, color 0.22s ease, transform 0.22s ease;
 
   &:hover {
     text-decoration: underline;
-  }
-
-  &:active {
-    transform: translateY(0);
   }
 }
 
@@ -73,21 +65,29 @@
   text-decoration: underline;
 }
 
+.login-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 0.56rem 1rem;
+  font-size: 0.96rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #1a6eb2, #2e96ea);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(27, 115, 189, 0.28);
+  transition: transform 0.2s ease, opacity 0.2s ease;
 
-.tg-login-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  &:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+  }
 }
 
-.tg-login-wrapper iframe {
-  transform: scale(0.9);
-  transform-origin: center;
-  transition: opacity 0.25s ease;
-}
-
-.tg-login-wrapper iframe:hover {
-  opacity: 0.85;
+.login-btn--ghost {
+  background: #fff;
+  color: #0e4a7b;
+  border: 1px solid rgba(33, 122, 201, 0.3);
+  box-shadow: none;
 }
 
 .burger-btn {
@@ -130,7 +130,7 @@
 }
 
 .burger-line::before {
-  top: -5px;
+  top: -6px;
 }
 
 .burger-line::after {
@@ -194,9 +194,9 @@
   text-decoration: underline;
 }
 
-.tg-login-wrapper--mobile {
+.login-btn--mobile {
   margin-top: 8px;
-  justify-content: flex-start;
+  width: 100%;
 }
 
 @media (max-width: 900px) {
@@ -210,7 +210,7 @@
   }
 
   .header__nav,
-  .header__right>.tg-login-wrapper {
+  .header__right > .login-btn {
     display: none;
   }
 
@@ -220,7 +220,6 @@
 }
 
 @media (min-width: 901px) {
-
   .menu-overlay,
   .mobile-menu {
     display: none !important;
