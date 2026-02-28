@@ -1,4 +1,4 @@
-.auth-modal {
+﻿.auth-modal {
   position: fixed;
   inset: 0;
   z-index: 120;
@@ -40,11 +40,44 @@
 }
 
 .auth-form__input {
+  width: 100%;
   height: 42px;
   border: 1px solid rgba(63, 139, 209, 0.28);
   border-radius: 10px;
   padding: 0 0.75rem;
   font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+
+  &:focus,
+  &:active {
+    outline: none;
+    border-color: rgba(44, 132, 211, 0.75);
+    box-shadow: 0 0 0 4px rgba(64, 156, 242, 0.22);
+  }
+}
+
+.auth-form__password-wrap {
+  position: relative;
+}
+
+.auth-form__input--password {
+  padding-right: 2.5rem;
+}
+
+.auth-form__toggle-password {
+  position: absolute;
+  top: 50%;
+  right: 0.55rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: #3f78a8;
+  cursor: pointer;
 }
 
 .auth-form__error {
