@@ -14,7 +14,8 @@ const formatIsoDate = (value: string): string => {
 const toListItem = (item: ComplaintDto): AppealListItem => ({
   id: item.id,
   title: (item.issueSummary || item.objectName || "Обращение без названия").slice(0, 120),
-  date: formatIsoDate(item.submissionDate),
+  date: formatIsoDate(item.submissionDate), 
+  status: (item.status || "Неизвестно"),
 });
 
 const toDetails = (item: ComplaintDto): AppealDetails => ({

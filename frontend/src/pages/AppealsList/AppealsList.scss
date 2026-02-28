@@ -1,4 +1,4 @@
-﻿$table-grid: 100px minmax(0, 1fr) 140px;
+﻿$table-grid: 100px minmax(0, 1fr) 140px 0.3fr;
 
 .appeals-list-page {
   animation: fade-up 0.45s ease;
@@ -165,6 +165,49 @@
   font-variant-numeric: tabular-nums;
 }
 
+.appeals-card__status {
+  color: var(--blue-700);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 12px;
+  background-color: rgba(40, 128, 205, 0.1);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1rem 0;
+
+  button {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    cursor: pointer;
+    background-color: var(--blue-700);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    transition: background-color 0.3s ease;
+
+    &:disabled {
+      background-color: rgba(33, 122, 201, 0.5);
+      pointer-events: none;
+    }
+
+    &:hover {
+      background-color: var(--blue-600);
+    }
+  }
+
+  span {
+    font-size: 1rem;
+    color: var(--blue-800);
+  }
+}
+
 @media (max-width: 760px) {
   .appeals-list-page__title {
     font-size: clamp(1.45rem, 7vw, 1.95rem);
@@ -185,7 +228,7 @@
   }
 
   .appeals-card {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.6rem 0.9rem;
     padding: 0.85rem;
     border: 1px solid rgba(40, 128, 205, 0.12);
@@ -203,10 +246,21 @@
     order: 2;
     justify-self: end;
     font-size: 0.82rem;
+    justify-self: start;
+  }
+
+  .appeals-card__status {
+    order: 3;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background-color: rgba(40, 128, 205, 0.1);
   }
 
   .appeals-card__title {
-    order: 3;
+    order: 4;
     grid-column: 1 / -1;
     font-size: 0.92rem;
     line-height: 1.45;

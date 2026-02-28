@@ -10,6 +10,9 @@ function AppealsList() {
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("default");
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,6 +70,32 @@ function AppealsList() {
     });
   };
 
+  const currentAppeals = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredAndSortedAppeals.slice(startIndex, endIndex);
+  }, [filteredAndSortedAppeals, currentPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedAppeals.length / itemsPerPage);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const renderPagination = () => (
+    <div className="pagination">
+      <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}>
+        {"<"}
+      </button>
+      <span>{`${currentPage} из ${totalPages}`}</span>
+      <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages}>
+        {">"}
+      </button>
+    </div>
+  );
+
   return (
     <section className="appeals-list-page">
       <div className="appeals-list-page__head">
@@ -98,14 +127,15 @@ function AppealsList() {
               {sortOrder === "desc" && <span className="sort-arrow">↓</span>}
               {sortOrder === "asc" && <span className="sort-arrow">↑</span>}
             </span>
+            <span className="col-title">Статус</span>
           </div>
 
           <ul className="appeals-list">
-            {filteredAndSortedAppeals.length === 0 && (
+            {currentAppeals.length === 0 && (
               <li className="appeals-list__empty">По вашему запросу ничего не найдено.</li>
             )}
 
-            {filteredAndSortedAppeals.map((appeal, index) => (
+            {currentAppeals.map((appeal, index) => (
               <li
                 className="appeals-list__item"
                 key={appeal.id}
@@ -117,10 +147,13 @@ function AppealsList() {
                   </span>
                   <span className="appeals-card__title">{appeal.title}</span>
                   <span className="appeals-card__date">{appeal.date}</span>
+                  <span className="appeals-card__status">{appeal.status}</span>
                 </Link>
               </li>
             ))}
           </ul>
+
+          {renderPagination()}
         </div>
       )}
     </section>

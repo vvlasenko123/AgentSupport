@@ -12,12 +12,14 @@ export interface ComplaintDto {
   deviceType: string;
   emotionalTone: string;
   issueSummary: string;
+  status: string
 }
 
 export interface AppealListItem {
   id: string;
   title: string;
   date: string;
+  status: string;
 }
 
 export interface AppealDetails {
