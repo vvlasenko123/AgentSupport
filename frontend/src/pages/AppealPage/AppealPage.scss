@@ -1,4 +1,4 @@
-.appeal-page {
+﻿.appeal-page {
   animation: fade-up 0.45s ease;
 }
 
@@ -44,12 +44,14 @@
   overflow: hidden;
   border: 1px solid rgba(49, 129, 204, 0.2);
   box-shadow: 0 18px 30px rgba(26, 126, 201, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
 }
 
 .appeal-table {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.94);
+  table-layout: fixed;
 
   thead tr {
     background: linear-gradient(110deg, #1e7bd0, #47a4f7);
@@ -81,11 +83,21 @@
 
   td:last-child {
     color: var(--blue-800);
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: pre-wrap;
+    line-height: 1.45;
+    text-align: justify;
   }
+}
+
+.appeal-table__summary {
+  max-width: 0;
 }
 
 @media (max-width: 740px) {
   .appeal-table {
+
     th,
     td {
       padding: 0.72rem 0.72rem;
@@ -93,7 +105,7 @@
     }
 
     td:first-child {
-      width: 160px;
+      width: 150px;
     }
   }
 }

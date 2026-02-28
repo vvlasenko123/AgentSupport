@@ -1,0 +1,18 @@
+﻿.statistics-page {
+  animation: fade-up 0.45s ease;
+}
+
+.appeals-list-page__head {
+  margin-bottom: 1.15rem;
+}
+
+.appeals-list-page__title {
+  margin: 0;
+  font-size: clamp(1.75rem, 3.1vw, 2.4rem);
+  color: var(--blue-900);
+}
+
+.appeals-list-page__subtitle {
+  margin: 0.45rem 0 0;
+  color: var(--blue-700);
+}
