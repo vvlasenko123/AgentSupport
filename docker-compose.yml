@@ -1,3 +1,7 @@
+secrets:
+  gcp_sa:
+    file: ./secrets/gcp-sa.json
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -52,6 +56,18 @@ services:
       - "9092:9092"
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
+
+  kafka_ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka_ui
+    restart: unless-stopped
+    ports:
+      - "8085:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:19092
+    depends_on:
+      - kafka
 
   backend:
     build:
@@ -165,6 +181,18 @@ services:
     volumes:
       - keycloak_data:/var/lib/postgresql/data
     restart: unless-stopped
+  smtp_connector:
+    build:
+      context: .
+      dockerfile: Api/Dockerfile
+    secrets:
+      - gcp_sa
+    environment:
+      - PubSubOptions__ProjectId=glass-sylph-488810-k2
+      - PubSubOptions__SubscriptionId=gmail-inbox-sub
+      - PubSubOptions__ServiceAccountJsonPath=/run/secrets/gcp_sa
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
+      - GOOGLE_CLOUD_PROJECT=glass-sylph-488810-k2
 
 volumes:
   postgres_data:

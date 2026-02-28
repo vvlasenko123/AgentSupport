@@ -7,7 +7,7 @@ namespace SmtpConnector.Dal.Repository;
 
 public sealed class PostgresHistoryStateStore : IHistoryStateStore
 {
-    private const int SingletonId = 1;
+    private const int HistoryStateId = 1;
     private readonly IDbConnection _connection;
 
     public PostgresHistoryStateStore(IDbConnection connection)
@@ -29,12 +29,12 @@ WHERE id = @Id;
             sql,
             new
             {
-                Id = SingletonId,
+                Id = HistoryStateId,
             },
             cancellationToken: cancellationToken));
     }
 
-    public async Task SaveLastHistoryIdAsync(string historyId, CancellationToken cancellationToken)
+    public async Task SaveLastHistoryIdAsync(string? historyId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(historyId))
         {
@@ -56,7 +56,7 @@ SET
             sql,
             new
             {
-                Id = SingletonId,
+                Id = HistoryStateId,
                 HistoryId = historyId,
             },
             cancellationToken: cancellationToken));
