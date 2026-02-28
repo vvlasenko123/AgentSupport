@@ -2,6 +2,9 @@
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { appealsApi } from "../../utils/appealsApi";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
 import type { AppealListItem, SortOrder } from "../../types/appeal";
 import "./AppealsList.scss";
 
@@ -96,11 +99,71 @@ function AppealsList() {
     </div>
   );
 
+  // Функция для экспорта в CSV
+  const exportToCSV = async () => {
+    const data = await Promise.all(
+      appeals.map(async (appeal) => {
+        const fullDetails = await appealsApi.getAppealById(appeal.id);
+        return {
+          "Номер": appeal.id,
+          "Дата": fullDetails.date,
+          "ФИО": fullDetails.fullName,
+          "Объект": fullDetails.objectName,
+          "Телефон": fullDetails.phone,
+          "Email": fullDetails.email,
+          "Заводские номера": fullDetails.serialNumbers,
+          "Тип приборов": fullDetails.deviceType,
+          "Эмоциональный окрас": fullDetails.emotionalTone,
+          "Суть вопроса": fullDetails.issueSummary,
+        };
+      })
+    );
+
+    const csv = Papa.unparse(data);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "appeals.csv");
+  };
+
+  // Функция для экспорта в XLSX
+  const exportToXLSX = async () => {
+    const data = await Promise.all(
+      appeals.map(async (appeal) => {
+        const fullDetails = await appealsApi.getAppealById(appeal.id);
+        return {
+          "Номер": appeal.id,
+          "Дата": fullDetails.date,
+          "ФИО": fullDetails.fullName,
+          "Объект": fullDetails.objectName,
+          "Телефон": fullDetails.phone,
+          "Email": fullDetails.email,
+          "Заводские номера": fullDetails.serialNumbers,
+          "Тип приборов": fullDetails.deviceType,
+          "Эмоциональный окрас": fullDetails.emotionalTone,
+          "Суть вопроса": fullDetails.issueSummary,
+        };
+      })
+    );
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Обращения");
+
+    XLSX.writeFile(wb, "appeals.xlsx");
+  };
+
   return (
     <section className="appeals-list-page">
       <div className="appeals-list-page__head">
-        <h1 className="appeals-list-page__title">Обращения</h1>
-        <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
+        <div>
+          <h1 className="appeals-list-page__title">Обращения</h1>
+          <p className="appeals-list-page__subtitle">Поиск и просмотр обращений в реестре</p>
+        </div>
+
+
+        <div className="export-buttons">
+          <button onClick={exportToCSV}>Выгрузить в CSV</button>
+          <button onClick={exportToXLSX}>Выгрузить в XLSX</button>
+        </div>
       </div>
 
       <div className="appeals-search">
