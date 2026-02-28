@@ -1,27 +1,41 @@
-from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
-import torch
 import os
 import json
+import sys
+import subprocess
+
+# --- ХАК ДЛЯ УСТАНОВКИ ЗАВИСИМОСТЕЙ НА ЛЕТУ ---
+def install_deps():
+    try:
+        import accelerate
+    except ImportError:
+        print("Библиотека 'accelerate' не найдена. Устанавливаю...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "accelerate", "transformers[torch]", "-U"])
+        print("Установка завершена. Перезапустите скрипт или продолжаю выполнение...")
+
+install_deps()
+
+# Теперь импортируем всё остальное
+import torch
 from sklearn.model_selection import train_test_split
+from transformers import (
+    BertTokenizer,
+    BertForSequenceClassification,
+    Trainer,
+    TrainingArguments,
+    DataCollatorWithPadding
+)
 
 # Параметры
 MODEL_NAME = "cointegrated/rubert-tiny2"
 SAVE_PATH = "./rubert"
 DATA_FILE = "train_data.json"
-EPOCHS = 15
+EPOCHS = 15  # Теперь точно 15
 
 CATEGORY_MAP = {
-    "MALFUNCTION": 0,
-    "REPAIR_SERVICE": 1,
-    "MESSAGE_NOTIFICATION": 2,
-    "INFORMATION_REQUEST": 3,
-    "CALIBRATION_SETTING": 4,
-    "CONNECTION_INTEGRATION": 5,
-    "FEEDBACK_COMPLAINT": 6,
-    "WARRANTY_RETURN": 7,
-    "SOFTWARE_UPDATE": 8
+    "MALFUNCTION": 0, "REPAIR_SERVICE": 1, "MESSAGE_NOTIFICATION": 2,
+    "INFORMATION_REQUEST": 3, "CALIBRATION_SETTING": 4, "CONNECTION_INTEGRATION": 5,
+    "FEEDBACK_COMPLAINT": 6, "WARRANTY_RETURN": 7, "SOFTWARE_UPDATE": 8
 }
-
 ID_TO_CATEGORY = {v: k for k, v in CATEGORY_MAP.items()}
 
 class ErisDataset(torch.utils.data.Dataset):
@@ -31,26 +45,25 @@ class ErisDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-        item['labels'] = torch.tensor(self.labels[idx])
+        item['labels'] = torch.tensor(self.labels[idx], dtype=torch.long)
         return item
 
     def __len__(self):
         return len(self.labels)
 
 def train():
-    print(f"--- Запуск обучения: 9 категорий, {EPOCHS} эпох ---")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"--- Запуск обучения на {device.upper()} (Эпох: {EPOCHS}) ---")
 
     if not os.path.exists(DATA_FILE):
-        print(f"Файл {DATA_FILE} не найден!")
+        print(f"Ошибка: Файл {DATA_FILE} не найден!")
         return
 
-    # Загрузка данных
+    # 1. Загрузка данных
     with open(DATA_FILE, 'r', encoding='utf-8') as f:
         raw_data = json.load(f)
 
-    texts = []
-    labels = []
-
+    texts, labels = [], []
     for item in raw_data:
         cat_name = item.get("category")
         if cat_name in CATEGORY_MAP:
@@ -59,16 +72,17 @@ def train():
 
     print(f"Загружено примеров: {len(texts)}")
 
-    # Токенизация
+    # 2. Модель и токенизатор
     tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
-    model = BertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=len(CATEGORY_MAP))
+    model = BertForSequenceClassification.from_pretrained(
+        MODEL_NAME,
+        num_labels=len(CATEGORY_MAP)
+    ).to(device)
 
-    # Размораживаем все слои
-    for param in model.parameters():
-        param.requires_grad = True
-
+    # 3. Подготовка данных
+    # Stratify гарантирует, что в тесте будут все категории пропорционально
     train_texts, val_texts, train_labels, val_labels = train_test_split(
-        texts, labels, test_size=0.15, random_state=42
+        texts, labels, test_size=0.15, random_state=42, stratify=labels
     )
 
     train_encodings = tokenizer(train_texts, truncation=True, padding=True, max_length=512)
@@ -77,37 +91,45 @@ def train():
     train_dataset = ErisDataset(train_encodings, train_labels)
     val_dataset = ErisDataset(val_encodings, val_labels)
 
-    # Настройка параметров обучения
+    # 4. Аргументы (решаем проблему 3-х эпох)
     training_args = TrainingArguments(
         output_dir='./results',
-        num_train_epochs=EPOCHS,
-        per_device_train_batch_size=8,
-        learning_rate=1e-5,  # Уменьшаем скорость обучения
+        overwrite_output_dir=True,          # Очищает старые чекпоинты (ВАЖНО!)
+        num_train_epochs=EPOCHS,            # Строго 15
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        learning_rate=3e-5,                 # Оптимально для tiny2
+        weight_decay=0.01,
         evaluation_strategy="epoch",
         save_strategy="epoch",
-        load_best_model_at_end=False,
+        logging_steps=10,
+        load_best_model_at_end=True,        # Вернет лучшую модель, а не последнюю
         metric_for_best_model="eval_loss",
-        lr_scheduler_type="linear",  # Линейный scheduler
-        report_to="none"
+        report_to="none",                   # Отключает wandb и прочее
+        fp16=torch.cuda.is_available()      # Ускорение на GPU
     )
 
+    # 5. Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer)
     )
 
-    # Запуск тренировки
+    # 6. Обучение
     trainer.train()
+
+    # Сохранение
+    os.makedirs(SAVE_PATH, exist_ok=True)
     model.save_pretrained(SAVE_PATH)
     tokenizer.save_pretrained(SAVE_PATH)
 
-    # Сохраняем маппинг категорий
     with open(os.path.join(SAVE_PATH, "category_mapping.json"), "w") as f:
-        json.dump(ID_TO_CATEGORY, f)
+        json.dump(ID_TO_CATEGORY, f, ensure_ascii=False, indent=4)
 
-    print(f"Обучение завершено. Модель сохранена в {SAVE_PATH}")
+    print(f"\n[ГОТОВО] Модель сохранена в {SAVE_PATH}")
 
 if __name__ == "__main__":
     train()

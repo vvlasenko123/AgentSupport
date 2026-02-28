@@ -49,3 +49,9 @@ build
 *.ntvs*
 *.njsproj
 *.sw?
+
+rresults/
+rubert/
+__pycache__/
+*.bin
+*.safetensors
