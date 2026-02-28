@@ -1,46 +1,52 @@
-﻿import { axiosInstance } from "./axiosInstance";
+﻿import axios from "axios";
 
-export type TelegramAuthPayload = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
+export type LoginCredentials = {
+  username: string;
+  password: string;
 };
 
-type AuthUser = {
-  id: string | number;
-  role?: string;
-  first_name?: string;
-  username?: string;
+type TokenResponse = {
+  access_token: string;
+  refresh_token?: string;
+  token_type: string;
+  expires_in: number;
 };
 
-type TgAuthResponse = {
-  access?: string;
-  refresh?: string;
-  user?: AuthUser;
-};
+const AUTH_TOKEN_URL =
+  import.meta.env.VITE_AUTH_TOKEN_URL || "/realms/master/protocol/openid-connect/token";
+const AUTH_CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || "admin-cli";
 
-const TG_LOGIN_ENDPOINT = import.meta.env.VITE_TG_LOGIN_ENDPOINT || "auth/login/";
+export async function loginWithPassword(credentials: LoginCredentials) {
+  const params = new URLSearchParams({
+    grant_type: "password",
+    client_id: AUTH_CLIENT_ID,
+    username: credentials.username,
+    password: credentials.password,
+  });
 
-export async function loginWithTelegram(payload: TelegramAuthPayload) {
-  const { data } = await axiosInstance.post<TgAuthResponse>(TG_LOGIN_ENDPOINT, payload);
+  const { data } = await axios.post<TokenResponse>(AUTH_TOKEN_URL, params, {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  });
 
-  if (data.access) localStorage.setItem("access_token", data.access);
-  if (data.refresh) localStorage.setItem("refresh_token", data.refresh);
-
-  if (data.user) {
-    localStorage.setItem("user_id", String(data.user.id));
-    if (data.user.role) localStorage.setItem("user_role", data.user.role);
-
-    const displayName =
-      (data.user.first_name && data.user.first_name.trim()) || data.user.username || "Пользователь";
-
-    localStorage.setItem("user_name", displayName);
+  localStorage.setItem("access_token", data.access_token);
+  if (data.refresh_token) {
+    localStorage.setItem("refresh_token", data.refresh_token);
   }
+  localStorage.setItem("user_name", credentials.username);
 
   window.dispatchEvent(new Event("agent-auth-changed"));
   return data;
+}
+
+export function logout() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("user_name");
+  window.dispatchEvent(new Event("agent-auth-changed"));
+}
+
+export function isAuthorized() {
+  return !!localStorage.getItem("access_token");
 }
