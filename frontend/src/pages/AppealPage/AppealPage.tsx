@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { appealsApi } from "../../api/appealsApi";
+import { appealsApi } from "../../utils/appealsApi";
 import type { AppealDetails } from "../../types/appeal";
 import "./AppealPage.scss";
 
@@ -19,7 +19,6 @@ const tableRows = (appeal: AppealDetails) => [
 
 function AppealPage() {
   const { id } = useParams<{ id: string }>();
-  const appealId = Number(id);
 
   const [appeal, setAppeal] = useState<AppealDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -27,7 +26,7 @@ function AppealPage() {
 
   useEffect(() => {
     const fetchAppeal = async () => {
-      if (!Number.isFinite(appealId) || appealId <= 0) {
+      if (!id) {
         setError("Некорректный ID обращения.");
         setIsLoading(false);
         return;
@@ -36,7 +35,7 @@ function AppealPage() {
       try {
         setIsLoading(true);
         setError(null);
-        const details = await appealsApi.getAppealById(appealId);
+        const details = await appealsApi.getAppealById(id);
         setAppeal(details);
       } catch {
         setError("Не удалось получить данные обращения. Проверьте ID и попробуйте снова.");
@@ -46,7 +45,7 @@ function AppealPage() {
     };
 
     fetchAppeal();
-  }, [appealId]);
+  }, [id]);
 
   const rows = useMemo(() => (appeal ? tableRows(appeal) : []), [appeal]);
 
@@ -57,7 +56,7 @@ function AppealPage() {
         К списку обращений
       </Link>
 
-      <h1 className="appeal-page__title">Карточка обращения #{id}</h1>
+      <h1 className="appeal-page__title">Карточка обращения #{id?.slice(0, 8)}</h1>
 
       {isLoading && <p className="appeal-page__state">Загрузка данных...</p>}
       {error && <p className="appeal-page__state appeal-page__state--error">{error}</p>}
