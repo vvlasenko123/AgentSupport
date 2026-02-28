@@ -1,0 +1,2 @@
+ml/rubert/flax_model.msgpack filter=lfs diff=lfs merge=lfs -text
+ml/rubert/pytorch_model.bin filter=lfs diff=lfs merge=lfs -text
