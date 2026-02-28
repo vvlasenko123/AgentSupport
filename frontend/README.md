@@ -81,10 +81,6 @@ npm run lint     # eslint проверка
 
 - `src/api/axiosInstance.ts`
 
-Сейчас используется публичный mock:
-
-- `https://dummyjson.com`
-
 ## Docker
 
 В проекте подготовлен production Dockerfile:
@@ -106,4 +102,4 @@ docker run --rm -p 80:80 enigma-frontend
 
 После запуска приложение доступно на:
 
-- `http://localhost`
+- `http://localhost/5173`

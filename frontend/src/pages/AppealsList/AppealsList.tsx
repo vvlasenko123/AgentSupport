@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
-import { appealsApi } from "../../api/appealsApi";
+import { appealsApi } from "../../utils/appealsApi";
 import type { AppealListItem, SortOrder } from "../../types/appeal";
 import "./AppealsList.scss";
 
@@ -93,7 +93,10 @@ function AppealsList() {
             <span className="col-title">Номер</span>
             <span className="col-title">Обращение</span>
             <span className="col-date sortable" onClick={toggleSort} role="button" tabIndex={0}>
-              Дата {sortOrder === "desc" ? "↓" : sortOrder === "asc" ? "↑" : ""}
+              Дата
+              {sortOrder === "default" && <span className="sort-arrow sort-arrow--double">↕</span>}
+              {sortOrder === "desc" && <span className="sort-arrow">↓</span>}
+              {sortOrder === "asc" && <span className="sort-arrow">↑</span>}
             </span>
           </div>
 
@@ -109,7 +112,9 @@ function AppealsList() {
                 style={{ animationDelay: `${index * 0.03}s` }}
               >
                 <Link to={`/appeals/${appeal.id}`} className="appeals-card">
-                  <span className="appeals-card__id">#{appeal.id}</span>
+                  <span className="appeals-card__id" title={appeal.id}>
+                    #{appeal.id.slice(0, 8)}
+                  </span>
                   <span className="appeals-card__title">{appeal.title}</span>
                   <span className="appeals-card__date">{appeal.date}</span>
                 </Link>

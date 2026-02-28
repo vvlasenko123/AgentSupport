@@ -96,6 +96,14 @@
       color: #2e5f8d;
     }
   }
+
+  .sort-arrow {
+    display: inline-block;
+  }
+
+  .sort-arrow--double {
+    transform: translateY(-1.5px);
+  }
 }
 
 .appeals-list {
@@ -153,8 +161,7 @@
 }
 
 .appeals-card__date {
-  color: #5f7f9f;
-  font-size: 0.92rem;
+  color: var(--blue-800);
   font-variant-numeric: tabular-nums;
 }
 
