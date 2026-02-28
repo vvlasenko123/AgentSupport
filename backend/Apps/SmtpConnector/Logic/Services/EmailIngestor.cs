@@ -20,11 +20,6 @@ public sealed class EmailIngestor : IEmailIngestor
             throw new ArgumentNullException(nameof(request), "Запрос не может быть null");
         }
 
-        if (string.IsNullOrWhiteSpace(request.RawMimeBase64))
-        {
-            throw new InvalidOperationException("Письмо пустое");
-        }
-
         var response = await _broker.SendRpc<EmailReceivedRpcRequest, EmailReceivedRpcResponse>(request, cancellationToken);
 
         if (response.Accepted is false)

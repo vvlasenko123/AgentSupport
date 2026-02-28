@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Infrastructure.Broker.Kafka.Contract;
 using Infrastructure.Broker.Kafka.Rpc.Envelope;
 using Infrastructure.Broker.Kafka.Rpc.Interfaces;
@@ -18,11 +19,29 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
     private readonly ILogger<KafkaBrokerCommandor> _logger;
     private readonly IProducer<string, string> _producer;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly IAdminClient _admin;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _ensuredTopics = new();
 
+    // KafkaBrokerCommandor.cs
     public KafkaBrokerCommandor(IOptions<KafkaOptions> options, ILogger<KafkaBrokerCommandor> logger)
     {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
+        if (logger is null)
+        {
+            throw new ArgumentNullException(nameof(logger));
+        }
+
         _options = options.Value;
         _logger = logger;
+
+        if (string.IsNullOrWhiteSpace(_options.BootstrapServers))
+        {
+            throw new InvalidOperationException("Не задан KafkaOptions.BootstrapServers");
+        }
 
         var producerConfig = new ProducerConfig
         {
@@ -30,6 +49,13 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
         };
 
         _producer = new ProducerBuilder<string, string>(producerConfig).Build();
+
+        var adminConfig = new AdminClientConfig
+        {
+            BootstrapServers = _options.BootstrapServers,
+        };
+
+        _admin = new AdminClientBuilder(adminConfig).Build();
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -47,6 +73,8 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
 
         var requestTopic = KafkaContractName.Get<TRequest>();
         var responseTopic = KafkaContractName.Get<TResponse>();
+
+        await EnsureTopicsAsync(requestTopic, responseTopic, cancellationToken);
 
         var correlationId = Guid.NewGuid().ToString("N");
 
@@ -77,22 +105,126 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
         return WaitResponse<TResponse>(consumer, responseTopic, correlationId, cancellationToken);
     }
 
+    private async Task EnsureTopicsAsync(string requestTopic, string responseTopic, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(requestTopic))
+        {
+            throw new InvalidOperationException("Не задан request topic");
+        }
+
+        if (string.IsNullOrWhiteSpace(responseTopic))
+        {
+            throw new InvalidOperationException("Не задан response topic");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var needCreateRequest = _ensuredTopics.TryAdd(requestTopic, 0);
+        var needCreateResponse = _ensuredTopics.TryAdd(responseTopic, 0);
+
+        if (needCreateRequest is false && needCreateResponse is false)
+        {
+            return;
+        }
+
+        var topics = new List<Confluent.Kafka.Admin.TopicSpecification>();
+
+        if (needCreateRequest)
+        {
+            topics.Add(new Confluent.Kafka.Admin.TopicSpecification
+            {
+                Name = requestTopic,
+                NumPartitions = 1,
+                ReplicationFactor = 1
+            });
+        }
+
+        if (needCreateResponse)
+        {
+            topics.Add(new Confluent.Kafka.Admin.TopicSpecification
+            {
+                Name = responseTopic,
+                NumPartitions = 1,
+                ReplicationFactor = 1
+            });
+        }
+
+        try
+        {
+            await _admin.CreateTopicsAsync(topics);
+
+            await Task.Delay(200, cancellationToken);
+        }
+        catch (CreateTopicsException ex)
+        {
+            foreach (var result in ex.Results)
+            {
+                if (result.Error.Code == ErrorCode.NoError)
+                {
+                    continue;
+                }
+
+                if (result.Error.Code == ErrorCode.TopicAlreadyExists)
+                {
+                    continue;
+                }
+
+                if (needCreateRequest)
+                {
+                    _ensuredTopics.TryRemove(requestTopic, out _);
+                }
+
+                if (needCreateResponse)
+                {
+                    _ensuredTopics.TryRemove(responseTopic, out _);
+                }
+
+                throw new InvalidOperationException(
+                    $"Не удалось создать Kafka topic {result.Topic}. Причина: {result.Error.Reason}");
+            }
+        }
+    }
+
     /// <summary>
     /// Создает consumer, который подписывается на топик ответов
     /// </summary>
     private IConsumer<string, string> CreateResponseConsumer(string responseTopic)
     {
+        if (string.IsNullOrWhiteSpace(responseTopic))
+        {
+            throw new InvalidOperationException("Не задан response topic");
+        }
+
         var config = new ConsumerConfig
         {
             BootstrapServers = _options.BootstrapServers,
             GroupId = $"rpc-client-{Guid.NewGuid():N}",
-            AutoOffsetReset = AutoOffsetReset.Latest,
+            AutoOffsetReset = AutoOffsetReset.Earliest,
             EnableAutoCommit = false,
         };
 
         var consumer = new ConsumerBuilder<string, string>(config).Build();
 
         consumer.Subscribe(responseTopic);
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+
+        while (consumer.Assignment.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            consumer.Consume(TimeSpan.FromMilliseconds(200));
+        }
+
+        if (consumer.Assignment.Count == 0)
+        {
+            consumer.Close();
+            throw new InvalidOperationException("Не удалось получить назначение партиций для топика ответа");
+        }
+
+        foreach (var tp in consumer.Assignment)
+        {
+            var watermark = consumer.QueryWatermarkOffsets(tp, TimeSpan.FromSeconds(5));
+            consumer.Seek(new TopicPartitionOffset(tp, watermark.High));
+        }
 
         return consumer;
     }

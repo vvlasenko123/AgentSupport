@@ -5,6 +5,7 @@ using AgentSupport.Domain;
 using AgentSupport.Infrastructure;
 using Infrastructure.Broker;
 using Infrastructure.Broker.Kafka.Rpc.Handler.Interfaces;
+using Infrastructure.Broker.Kafka.Rpc.Services;
 using Infrastructure.Database;
 using Infrastructure.Mapper;
 using Infrastructure.MinIO;
@@ -59,7 +60,8 @@ public class StartUp
         services.AddPostgres();
         services.AddMinioStorage();
         services.AddKafka();
-        services.AddSingleton<IKafkaRpcHandler, EmailReceivedRpcHandler>();
+        services.AddScoped<IKafkaRpcHandler, EmailReceivedRpcHandler>();
+        services.AddHostedService<KafkaRpcServerHostedService>();
     }
 
     /// <summary>
