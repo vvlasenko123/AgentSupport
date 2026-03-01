@@ -33,7 +33,14 @@ public static class KafkaStartUp
         services.AddSingleton<IKafkaBrokerCommandor, KafkaBrokerCommandor>();
         services.AddHttpClient<IMlComplaintClient, MlComplaintClient>(c =>
         {
-            c.BaseAddress = new Uri("http://localhost:6767/");
+            var baseAddress = Environment.GetEnvironmentVariable("ML_BASE_ADDRESS");
+
+            if (string.IsNullOrWhiteSpace(baseAddress))
+            {
+                baseAddress = "http://localhost:6767/";
+            }
+
+            c.BaseAddress = new Uri(baseAddress);
             c.Timeout = TimeSpan.FromSeconds(15);
         });
     }

@@ -70,7 +70,7 @@ public sealed class EmailReceivedRpcHandler : IKafkaRpcHandler
             request.FromEmail ?? string.Empty,
             request.Subject ?? string.Empty,
             request.SentAtUtc,
-            request.Content?.Length ?? 0);
+            request.Content);
 
         var complaintId = CreateDeterministicGuid(request.MessageId);
 

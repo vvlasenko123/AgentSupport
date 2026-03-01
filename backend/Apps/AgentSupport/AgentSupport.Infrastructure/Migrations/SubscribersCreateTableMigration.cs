@@ -17,21 +17,21 @@ public sealed class SubscribersCreateTableMigration : IDatabaseMigration
         IDbConnection connection,
         ILogger<SubscribersCreateTableMigration> logger)
     {
-        _connection = connection;
-        _logger = logger;
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task ApplyAsync(CancellationToken token)
     {
         const string sql = @"
-CREATE TABLE subscribers (
-     chat_id BIGINT PRIMARY KEY,
-     username TEXT,
-     first_name TEXT,
-     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-     is_active BOOLEAN DEFAULT TRUE
- );
+CREATE TABLE IF NOT EXISTS subscribers
+(
+    chat_id BIGINT PRIMARY KEY,
+    username TEXT NULL,
+    first_name TEXT NULL,
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
 ";
 
         if (_connection.State is not ConnectionState.Open)

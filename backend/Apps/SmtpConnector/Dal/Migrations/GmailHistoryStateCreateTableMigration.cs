@@ -17,14 +17,14 @@ public sealed class GmailHistoryStateCreateTableMigration : IDatabaseMigration
         IDbConnection connection,
         ILogger<GmailHistoryStateCreateTableMigration> logger)
     {
-        _connection = connection;
-        _logger = logger;
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task ApplyAsync(CancellationToken token)
     {
         const string sql = @"
-CREATE TABLE IF NOT EXISTS gmail_history_state
+CREATE TABLE IF NOT EXISTS public.gmail_history_state
 (
     id int NOT NULL PRIMARY KEY,
     last_history_id text NOT NULL,

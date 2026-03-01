@@ -688,7 +688,7 @@ internal sealed class GmailHistoryProcessor
     private async Task HandleMessageIdAsync(GmailService gmail, string messageId, CancellationToken cancellationToken)
     {
         var get = gmail.Users.Messages.Get(_gmailOptions.UserId, messageId);
-        get.Format = Google.Apis.Gmail.v1.UsersResource.MessagesResource.GetRequest.FormatEnum.Raw;
+        get.Format = UsersResource.MessagesResource.GetRequest.FormatEnum.Raw;
 
         var msg = await get.ExecuteAsync(cancellationToken);
 
@@ -703,6 +703,16 @@ internal sealed class GmailHistoryProcessor
         var ingestor = scope.ServiceProvider.GetRequiredService<IEmailIngestor>();
 
         var request = EmailRequestFactory.Build(rawBytes);
+        Console.WriteLine("dsa " + request.Content);
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            var extracted = EmailContentExtractor.ExtractPlainText(rawBytes);
+
+            request.Content = string.IsNullOrWhiteSpace(extracted)
+                ? null
+                : extracted.Trim();
+        }
+
         await ingestor.IngestAsync(request, cancellationToken);
     }
 
