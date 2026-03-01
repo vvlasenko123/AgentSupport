@@ -91,7 +91,7 @@ services:
       - MinioOptions__UseSsl=false
 
       # Kafka
-      - KafkaOptions__BootstrapServers=kafka:9092
+      - KafkaOptions__BootstrapServers=kafka:19092
       - KafkaOptions__RpcTimeoutSeconds=30
     depends_on:
       postgres:
@@ -182,6 +182,7 @@ services:
     volumes:
       - keycloak_data:/var/lib/postgresql/data
     restart: unless-stopped
+
   ml:
     build:
       context: ./ml
@@ -200,11 +201,31 @@ services:
     secrets:
       - gcp_sa
     environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+  
+      # Postgres
+      - PostgresOptions__ConnectionString=Host=postgres;Port=5432;Username=postgres;Password=postgres;Database=agent-api;Include Error Detail=true
+      - PostgresOptions__AutoMigration=true
+  
+      # Kafka (для контейнеров правильнее kafka:19092)
+      - KafkaOptions__BootstrapServers=kafka:19092
+      - KafkaOptions__RpcTimeoutSeconds=30
+  
+      # PubSub
       - PubSubOptions__ProjectId=glass-sylph-488810-k2
       - PubSubOptions__SubscriptionId=gmail-inbox-sub
       - PubSubOptions__ServiceAccountJsonPath=/run/secrets/gcp_sa
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
       - GOOGLE_CLOUD_PROJECT=glass-sylph-488810-k2
+        
+      # Gmail
+      - GmailOptions__ApplicationName=SmtpConnector
+      - GmailOptions__UserId=me
+      - GmailOptions__ClientId=${GMAIL_CLIENT_ID}
+      - GmailOptions__ClientSecret=${GMAIL_CLIENT_SECRET}
+      - GmailOptions__RefreshToken=${GMAIL_REFRESH_TOKEN}
+      - GmailOptions__TopicName=projects/glass-sylph-488810-k2/topics/smtp
+      - GmailOptions__LabelIds__0=INBOX
 
 
 volumes:

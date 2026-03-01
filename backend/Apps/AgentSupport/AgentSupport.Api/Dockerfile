@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 ARG BUILD_CONFIGURATION=Release
@@ -28,10 +28,13 @@ RUN dotnet publish "AgentSupport.Api.csproj" \
     --no-restore \
     --self-contained false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-RUN apk add --no-cache icu-libs icu-data-full krb5-libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    librdkafka1 \
+    libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     LC_ALL=en_US.UTF-8 \

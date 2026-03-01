@@ -4,6 +4,7 @@ using System.Text.Json;
 using AgentSupport.Domain.Models.Complaints;
 using Infrastructure.Broker.Kafka.Contract;
 using Infrastructure.Broker.Kafka.Contracts;
+using Infrastructure.Broker.Kafka.Rpc.Handler;
 using Infrastructure.Broker.Kafka.Rpc.Handler.Interfaces;
 using Infrastructure.Database.Common.Interfaces;
 
@@ -13,14 +14,17 @@ public sealed class EmailReceivedRpcHandler : IKafkaRpcHandler
 {
     private readonly ILogger<EmailReceivedRpcHandler> _logger;
     private readonly IRepository<ComplaintModel> _complaints;
+    private readonly IMlComplaintClient _mlClient;
     private readonly JsonSerializerOptions _jsonOptions;
 
     public EmailReceivedRpcHandler(
         ILogger<EmailReceivedRpcHandler> logger,
-        IRepository<ComplaintModel> complaints)
+        IRepository<ComplaintModel> complaints,
+        IMlComplaintClient mlClient)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _complaints = complaints ?? throw new ArgumentNullException(nameof(complaints));
+        _mlClient = mlClient ?? throw new ArgumentNullException(nameof(mlClient));
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -60,14 +64,13 @@ public sealed class EmailReceivedRpcHandler : IKafkaRpcHandler
         }
 
         _logger.LogInformation(
-            "Получено письмо. MessageId={MessageId}, FromName={FromName}, FromEmail={FromEmail}, Subject={Subject}, SentAtUtc={SentAtUtc}, ContentLength={ContentLength}, Content={Content}",
+            "Получено письмо. MessageId={MessageId}, FromName={FromName}, FromEmail={FromEmail}, Subject={Subject}, SentAtUtc={SentAtUtc}, ContentLength={ContentLength}",
             request.MessageId,
-            request.FromName,
-            request.FromEmail,
-            request.Subject,
+            request.FromName ?? string.Empty,
+            request.FromEmail ?? string.Empty,
+            request.Subject ?? string.Empty,
             request.SentAtUtc,
-            request.Content?.Length ?? 0,
-            request.Content ?? string.Empty);
+            request.Content?.Length ?? 0);
 
         var complaintId = CreateDeterministicGuid(request.MessageId);
 
@@ -78,25 +81,59 @@ public sealed class EmailReceivedRpcHandler : IKafkaRpcHandler
             return JsonSerializer.Serialize(new EmailReceivedRpcResponse { Accepted = true }, _jsonOptions);
         }
 
-        var objectName = ExtractDomain(request.FromEmail);
-
         var submissionDate = request.SentAtUtc == default
             ? DateTime.UtcNow
             : request.SentAtUtc;
 
+        var objectName = ExtractDomain(request.FromEmail);
+
+        var mlRequest = new MlProcessRequest
+        {
+            Id = request.MessageId,
+            ComplaintId = complaintId.ToString(),
+            Direction = "Incoming",
+            ExternalMessageId = request.MessageId,
+            FromEmail = request.FromEmail,
+            FromName = request.FromName,
+            ToEmail = null,
+            Subject = request.Subject,
+            Content = request.Content,
+            ThreadId = null,
+            SentAtUtc = submissionDate,
+            CreatedAtUtc = DateTime.UtcNow,
+        };
+
+        MlComplaintResponse? mlResponse = null;
+
+        try
+        {
+            mlResponse = await _mlClient.ProcessAsync(mlRequest, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ML сервис недоступен или вернул ошибку. Сохраню жалобу без обогащения");
+        }
+
         var complaint = new ComplaintModel
         {
             Id = complaintId,
-            SubmissionDate = submissionDate,
-            Fio = request.FromName ?? string.Empty,
-            ObjectName = objectName,
-            PhoneNumber = null,
-            Email = string.IsNullOrWhiteSpace(request.FromEmail) ? null : request.FromEmail,
-            SerialNumbers = [],
-            DeviceType = null,
-            EmotionalTone = null,
-            IssueSummary = string.IsNullOrWhiteSpace(request.Subject) ? string.Empty : request.Subject,
-            Status = "open",
+            SubmissionDate = mlResponse?.SubmissionDate ?? submissionDate,
+            Fio = mlResponse?.Fio ?? (request.FromName ?? string.Empty),
+            ObjectName = mlResponse?.ObjectName ?? objectName,
+            PhoneNumber = mlResponse?.PhoneNumber,
+            Email = string.IsNullOrWhiteSpace(mlResponse?.Email) ? request.FromEmail : mlResponse?.Email,
+            SerialNumbers = mlResponse?.SerialNumbers ?? Array.Empty<string>(),
+            DeviceType = mlResponse?.DeviceType,
+            EmotionalTone = mlResponse?.EmotionalTone,
+            IssueSummary = mlResponse?.IssueSummary ?? (string.IsNullOrWhiteSpace(request.Subject) ? string.Empty : request.Subject),
+            Status = mlResponse?.Status ?? "open",
+            Category = mlResponse?.Category,
+            SuggestedAnswer = mlResponse?.SuggestedAnswer,
+            Content = request.Content,
         };
 
         await _complaints.CreateAsync(complaint, cancellationToken);

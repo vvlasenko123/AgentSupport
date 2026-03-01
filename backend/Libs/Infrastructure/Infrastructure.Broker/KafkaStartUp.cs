@@ -1,4 +1,5 @@
 ﻿using Infrastructure.Broker.Kafka.Rpc.Commandor;
+using Infrastructure.Broker.Kafka.Rpc.Handler;
 using Infrastructure.Broker.Kafka.Rpc.Interfaces;
 using Infrastructure.Broker.Options;
 using Infrastructure.Options.Extensions.Validate;
@@ -30,5 +31,10 @@ public static class KafkaStartUp
             .ValidateOnStart();
 
         services.AddSingleton<IKafkaBrokerCommandor, KafkaBrokerCommandor>();
+        services.AddHttpClient<IMlComplaintClient, MlComplaintClient>(c =>
+        {
+            c.BaseAddress = new Uri("http://localhost:6767/");
+            c.Timeout = TimeSpan.FromSeconds(15);
+        });
     }
 }

@@ -3,8 +3,14 @@ using MimeKit;
 
 namespace SmtpConnector.Api.Factory;
 
+/// <summary>
+/// Фабрика
+/// </summary>
 public static class EmailRequestFactory
 {
+    /// <summary>
+    /// Билдим сообщение
+    /// </summary>
     public static EmailReceivedRpcRequest Build(byte[] rawMime)
     {
         if (rawMime is null)
@@ -53,6 +59,9 @@ public static class EmailRequestFactory
         };
     }
 
+    /// <summary>
+    /// Чистим контент
+    /// </summary>
     private static string CleanContent(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -68,6 +77,9 @@ public static class EmailRequestFactory
         return content.Trim();
     }
 
+    /// <summary>
+    /// Нормализуем пути
+    /// </summary>
     private static string NormalizeNewLines(string content)
     {
         return content
@@ -75,6 +87,9 @@ public static class EmailRequestFactory
             .Replace("\r", "\n", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Обрезаем контент
+    /// </summary>
     private static string CutBySignatureDelimiter(string content)
     {
         var index = FindCutIndexNearEnd(content, "\n-- \n");
@@ -92,6 +107,9 @@ public static class EmailRequestFactory
         return content;
     }
 
+    /// <summary>
+    /// Убираем не нужные маркеры
+    /// </summary>
     private static string CutByFooterMarkers(string content)
     {
         var tailLimit = Math.Min(content.Length, 1200);
@@ -119,6 +137,9 @@ public static class EmailRequestFactory
         return content;
     }
 
+    /// <summary>
+    /// Футер
+    /// </summary>
     private static bool IsFooterLine(string line)
     {
         if (line.StartsWith("отправлено", StringComparison.OrdinalIgnoreCase))
@@ -154,6 +175,9 @@ public static class EmailRequestFactory
         return false;
     }
 
+    /// <summary>
+    /// Поиск индекса для обрезания не нужного контента
+    /// </summary>
     private static int FindCutIndexNearEnd(string content, string marker)
     {
         var index = content.LastIndexOf(marker, StringComparison.Ordinal);

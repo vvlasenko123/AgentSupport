@@ -1,4 +1,6 @@
 ﻿using System.Data;
+using Infrastructure.Database.Common.Interfaces;
+using Infrastructure.Database.Common.Repository;
 using Infrastructure.Database.Options;
 using Infrastructure.Database.PostgreSQL.Connection;
 using Infrastructure.Database.PostgreSQL.Services;
@@ -24,5 +26,6 @@ public static class DatabaseStartUp
 
         services.AddTransient<IDbConnection, PostgresConnection>();
         services.AddHostedService<PostgresMigrationHostedService>();
+        services.AddScoped<IEmailMessageRepository, PostgresEmailMessageRepository>();
     }
 }
