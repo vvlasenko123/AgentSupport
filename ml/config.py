@@ -5,6 +5,7 @@ import os
 
 # RuBERT: лёгкая модель для русского языка
 RUBERT_MODEL = os.environ.get("RUBERT_MODEL", "cointegrated/rubert-tiny2")
+NER_MODEL = os.environ.get("NER_MODEL", "")
 
 # Пути к данным
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
