@@ -28,14 +28,14 @@ logging.getLogger('aiogram').setLevel(logging.WARNING)
 # Конфигурация
 TELEGRAM_TOKEN = "8657445324:AAHYZLDx7jz-rQAHVjxuZalnikQz2qrm6t0"
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'notifications')
+KAFKA_TOPIC = 'EmailReceivedRpcRequest'  # Топик Kafka, к которому подключаемся
 
 # Конфигурация PostgreSQL
 DB_CONFIG = {
     'user': os.getenv('DB_USER', 'postgres'),
     'password': os.getenv('DB_PASSWORD', 'postgres'),
     'database': os.getenv('DB_NAME', 'agent-api'),
-    'host': os.getenv('DB_HOST', 'localhost'),  # берем из переменной окружения
+    'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', '5432'))
 }
 
@@ -66,13 +66,13 @@ class Database:
             # Проверяем существование таблицы
             async with self.pool.acquire() as conn:
                 await conn.execute('''
-                    CREATE TABLE IF NOT EXISTS subscribers (
-                        chat_id BIGINT PRIMARY KEY,
-                        username TEXT,
-                        first_name TEXT,
-                        last_seen TIMESTAMP
-                    )
-                ''')
+                                   CREATE TABLE IF NOT EXISTS subscribers (
+                                                                              chat_id BIGINT PRIMARY KEY,
+                                                                              username TEXT,
+                                                                              first_name TEXT,
+                                                                              last_seen TIMESTAMP
+                                   )
+                                   ''')
                 logger.info("Таблица subscribers проверена")
         except Exception as e:
             logger.error(f"Ошибка подключения к БД: {e}")
@@ -89,14 +89,14 @@ class Database:
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute('''
-                    INSERT INTO subscribers (chat_id, username, first_name, last_seen)
-                    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-                    ON CONFLICT (chat_id)
+                                   INSERT INTO subscribers (chat_id, username, first_name, last_seen)
+                                   VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+                                       ON CONFLICT (chat_id)
                     DO UPDATE SET
-                        username = EXCLUDED.username,
-                        first_name = EXCLUDED.first_name,
-                        last_seen = CURRENT_TIMESTAMP
-                ''', chat_id, username, first_name)
+                                       username = EXCLUDED.username,
+                                                                  first_name = EXCLUDED.first_name,
+                                                                  last_seen = CURRENT_TIMESTAMP
+                                   ''', chat_id, username, first_name)
             logger.info(f"Подписчик {chat_id} сохранен в БД")
             return True
         except Exception as e:
@@ -146,13 +146,12 @@ class SimpleBot:
         self.dp = Dispatcher()
         self.db = Database()
         self.consumer = AIOKafkaConsumer(
-            KAFKA_TOPIC,
+            KAFKA_TOPIC,  # Подключаемся к топику
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_deserializer=lambda m: json.loads(m.decode('utf-8')),
             auto_offset_reset='earliest',
             group_id="telegram_notification_bot"
         )
-
         # Регистрируем обработчики команд
         self.dp.message.register(self.cmd_start, Command("start"))
         self.dp.message.register(self.cmd_reg, Command("reg"))
@@ -237,36 +236,13 @@ class SimpleBot:
             parse_mode=ParseMode.HTML
         )
 
-    async def load_initial_subscribers(self):
-        """Загружает начальных подписчиков из истории (при первом запуске)"""
-        try:
-            updates = await self.bot.get_updates(offset=-1, timeout=30)
-
-            for update in updates:
-                if update.message and update.message.text == "/reg":
-                    chat_id = update.message.chat.id
-                    username = update.message.chat.username
-                    first_name = update.message.chat.first_name
-
-                    await self.db.add_subscriber(chat_id, username, first_name)
-                    logger.info(f"Загружен из истории: {first_name} (@{username}) - {chat_id}")
-
-            count = await self.db.get_subscriber_count()
-            logger.info(f"Всего подписчиков в БД после загрузки: {count}")
-
-        except Exception as e:
-            logger.error(f"Ошибка загрузки начальных подписчиков: {e}")
-
-    async def notify_all_subscribers(self, notification: Notification):
+    async def notify_all_subscribers(self, message: str):
         """Отправляет уведомление всем подписчикам из БД"""
         subscribers = await self.db.get_all_subscribers()
 
         if not subscribers:
             logger.warning("Нет подписчиков в БД для отправки")
             return
-
-        # Простое краткое сообщение
-        message = f"🔔 <b>Новое обращение в систему!</b>"
 
         logger.info(f"Отправка уведомления {len(subscribers)} подписчикам из БД...")
 
@@ -315,26 +291,11 @@ class SimpleBot:
             async for msg in self.consumer:
                 logger.info(f"Получено сообщение из Kafka (offset: {msg.offset})")
 
-                # Создаем уведомление (для логирования)
-                data = msg.value
-                notification = Notification(
-                    id=uuid.UUID(data['id']),
-                    submission_date=datetime.fromisoformat(data['submission_date']),
-                    fio=data['fio'],
-                    object_name=data['object_name'],
-                    phone_number=data.get('phone_number'),
-                    email=data.get('email'),
-                    serial_numbers=data['serial_numbers'],
-                    device_type=data.get('device_type'),
-                    emotional_tone=data.get('emotional_tone'),
-                    issue_summary=data['issue_summary'],
-                    status=data['status']
-                )
-
-                logger.info(f"Обработано: {notification.fio} - {notification.issue_summary}")
+                # Просто отправляем уведомление, что новый запрос в поддержку
+                message = "📩 <b>Пришел новый запрос в поддержку, проверьте систему!</b>"
 
                 # Отправляем всем подписчикам из БД
-                await self.notify_all_subscribers(notification)
+                await self.notify_all_subscribers(message)
 
         except Exception as e:
             logger.error(f"Ошибка: {e}")
