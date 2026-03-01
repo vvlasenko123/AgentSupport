@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY . ./
@@ -11,24 +11,27 @@ RUN dotnet publish backend/Apps/SmtpConnector/Api/SmtpConnector.Api.csproj \
     --no-restore \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-RUN apk update && apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     gnupg \
     python3 \
-    py3-pip \
+    python3-pip \
     bash \
-    libmagic \
+    libmagic1 \
     file \
     jq \
     tar \
     gzip \
-    && rm -rf /var/cache/apk/*
+    librdkafka1 \
+    libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PATH=$PATH:/google-cloud-sdk/bin
+
 RUN mkdir -p /google-cloud-sdk && \
     curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-485.0.0-linux-x86_64.tar.gz && \
     tar -xzf google-cloud-cli-485.0.0-linux-x86_64.tar.gz -C /google-cloud-sdk --strip-components=1 && \
@@ -37,12 +40,11 @@ RUN mkdir -p /google-cloud-sdk && \
 
 COPY --from=build /app/publish ./
 
-RUN addgroup -g 10001 -S appuser && \
-    adduser -S -D -H -u 10001 -h /app -s /sbin/nologin -G appuser -g appuser appuser && \
-    mkdir -p /app/secrets && \
-    chown -R appuser:appuser /app && \
+RUN groupadd -g 10001 appuser && \
+    useradd -u 10001 -g 10001 -m -d /home/appuser -s /usr/sbin/nologin appuser && \
     mkdir -p /home/appuser/.config && \
-    chown -R appuser:appuser /home/appuser
+    chown -R appuser:appuser /home/appuser && \
+    chown -R appuser:appuser /app
 
 RUN cat > /app/entrypoint.sh << 'EOF'
 #!/usr/bin/env bash

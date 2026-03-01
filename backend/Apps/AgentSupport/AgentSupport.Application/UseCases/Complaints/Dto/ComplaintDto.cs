@@ -55,8 +55,8 @@ public sealed class ComplaintDto
     /// </summary>
     public string IssueSummary { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Статус жалобы
-    /// </summary>
+    public string? Content { get; set; }
     public string Status { get; set; } = "open";
+    public string? Category { get; set; }
+    public string? SuggestedAnswer { get; set; }
 }

@@ -13,7 +13,9 @@ public sealed class ComplaintProfile : Profile
 {
     public ComplaintProfile()
     {
-        CreateMap<CreateComplaintRequest, CreateComplaintCommand>();
+        CreateMap<CreateComplaintRequest, CreateComplaintCommand>()
+            .ForMember(x => x.Category, opt => opt.Ignore())
+            .ForMember(x => x.SuggestedAnswer, opt => opt.Ignore());
         CreateMap<UpdateComplaintRequest, UpdateComplaintCommand>()
             .ForMember(x => x.Id, opt => opt.Ignore());
         CreateMap<ComplaintDto, ComplaintResponse>();

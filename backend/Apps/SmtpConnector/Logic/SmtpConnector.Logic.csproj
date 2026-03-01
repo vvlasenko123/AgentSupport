@@ -6,7 +6,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Apis.Gmail.v1" Version="1.73.0.4029" />
+    <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.32.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Services\Validation\" />
   </ItemGroup>
 
   <PropertyGroup>

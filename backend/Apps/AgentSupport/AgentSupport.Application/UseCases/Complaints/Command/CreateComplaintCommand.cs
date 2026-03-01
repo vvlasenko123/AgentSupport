@@ -54,4 +54,14 @@ public sealed class CreateComplaintCommand
     /// Статус жалобы
     /// </summary>
     public string Status { get; set; } = "open";
+
+    /// <summary>
+    /// Категория обращения
+    /// </summary>
+    public string? Category { get; set; }
+
+    /// <summary>
+    /// Предложенный ответ от ML
+    /// </summary>
+    public string? SuggestedAnswer { get; set; }
 }

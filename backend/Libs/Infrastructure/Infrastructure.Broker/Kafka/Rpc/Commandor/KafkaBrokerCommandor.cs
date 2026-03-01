@@ -127,11 +127,11 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
             return;
         }
 
-        var topics = new List<Confluent.Kafka.Admin.TopicSpecification>();
+        var topics = new List<TopicSpecification>();
 
         if (needCreateRequest)
         {
-            topics.Add(new Confluent.Kafka.Admin.TopicSpecification
+            topics.Add(new TopicSpecification
             {
                 Name = requestTopic,
                 NumPartitions = 1,
@@ -141,7 +141,7 @@ public sealed class KafkaBrokerCommandor : IKafkaBrokerCommandor, IDisposable
 
         if (needCreateResponse)
         {
-            topics.Add(new Confluent.Kafka.Admin.TopicSpecification
+            topics.Add(new TopicSpecification
             {
                 Name = responseTopic,
                 NumPartitions = 1,

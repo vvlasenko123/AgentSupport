@@ -17,8 +17,8 @@ public sealed class ComplaintCreateTableMigration : IDatabaseMigration
         IDbConnection connection,
         ILogger<ComplaintCreateTableMigration> logger)
     {
-        _connection = connection;
-        _logger = logger;
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
@@ -36,7 +36,11 @@ CREATE TABLE IF NOT EXISTS complaints
     serial_numbers text[] NOT NULL DEFAULT ARRAY[]::text[],
     device_type text NULL,
     emotional_tone text NULL,
-    issue_summary text NOT NULL
+    issue_summary text NOT NULL,
+    content text NULL,
+    status text NOT NULL DEFAULT 'open',
+    category text NULL,
+    suggested_answer text NULL
 );
 ";
 
